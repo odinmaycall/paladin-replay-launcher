@@ -1,0 +1,72 @@
+name: Release
+
+# Builds the launcher and attaches it to a GitHub Release whenever a version tag
+# is pushed. Doing it here rather than uploading a hand-built exe means the
+# published binary is always reproducibly tied to a specific commit, and nobody
+# has to remember the publish flags.
+#
+#   git tag v0.1.1 && git push origin v0.1.1
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Build
+        run: dotnet build --configuration Release --nologo
+
+      # The suite has no package dependencies, so it runs anywhere the SDK does.
+      - name: Test
+        run: dotnet run --project tests/Paladin.Tests --configuration Release --no-build
+
+      # Single-file self-contained is required, not merely convenient: a split
+      # build leaves an unsigned PaladinReplayLauncher.dll beside the exe, which
+      # Windows Smart App Control blocks with 0x800711C7 on some machines.
+      - name: Publish
+        run: >
+          dotnet publish src/Paladin.Launcher/Paladin.Launcher.csproj
+          --configuration Release
+          --runtime win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:EnableCompressionInSingleFile=true
+          -p:DebugType=none
+          --output ./release
+          --nologo
+
+      - name: Checksum
+        shell: pwsh
+        run: |
+          $exe = "release/PaladinReplayLauncher.exe"
+          $hash = (Get-FileHash $exe -Algorithm SHA256).Hash
+          "$hash  PaladinReplayLauncher.exe" | Out-File -FilePath release/SHA256SUMS.txt -Encoding ascii
+          Write-Host "SHA256 $hash"
+          Write-Host ("{0:N1} MB" -f ((Get-Item $exe).Length / 1MB))
+
+      - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          body_path: RELEASE_NOTES.md
+          files: |
+            release/PaladinReplayLauncher.exe
+            release/SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        if: "!startsWith(github.ref, 'refs/tags/')"
+        with:
+          name: PaladinReplayLauncher
+          path: release/

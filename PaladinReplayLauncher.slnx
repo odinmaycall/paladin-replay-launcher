@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Paladin.Core/Paladin.Core.csproj" />
+    <Project Path="src/Paladin.Launcher/Paladin.Launcher.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Paladin.Tests/Paladin.Tests.csproj" />
+  </Folder>
+</Solution>

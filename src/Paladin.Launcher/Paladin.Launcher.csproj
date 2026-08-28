@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RootNamespace>Paladin.Launcher</RootNamespace>
+    <AssemblyName>PaladinReplayLauncher</AssemblyName>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+
+    <!-- Reported by the version command and stamped into the exe's file properties,
+         so a user reporting a problem can say which build they are on. -->
+    <Version>0.1.0</Version>
+    <AssemblyVersion>0.1.0.0</AssemblyVersion>
+    <FileVersion>0.1.0.0</FileVersion>
+    <Product>Paladin Replay Launcher</Product>
+    <Company>Paladin</Company>
+    <Description>Opens an Age of Empires IV replay and restores your game settings afterwards.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Paladin.Core\Paladin.Core.csproj" />
+  </ItemGroup>
+</Project>
