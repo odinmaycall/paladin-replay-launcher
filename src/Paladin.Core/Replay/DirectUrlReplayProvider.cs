@@ -134,6 +134,7 @@ public sealed class DirectUrlReplayProvider : IReplayProvider
             LocalPath = archive.Path,
             SuggestedFileName = ReplayArchive.StripCompressionExtension(Path.GetFileName(archive.Path)),
             SizeBytes = archive.Bytes,
+            GameBuild = verdict.GameBuild,
             IsTemporary = true,
         };
     }

@@ -53,6 +53,14 @@ public sealed class SessionRecord
     public string? LaunchExecutable { get; set; }
     public string? LaunchArguments { get; set; }
 
+    /// <summary>
+    /// Build the replay was recorded on, and the build installed when it was launched.
+    /// Recorded so a "the replay would not play" report can be checked against facts
+    /// rather than recollection.
+    /// </summary>
+    public int? ReplayGameBuild { get; set; }
+    public int? InstalledGameBuild { get; set; }
+
     public List<string> ProtectedPatterns { get; set; } = new();
     public List<FileSnapshot> PreLaunch { get; set; } = new();
 

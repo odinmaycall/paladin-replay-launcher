@@ -42,6 +42,13 @@ public sealed class AcquiredReplay
     public required long SizeBytes { get; init; }
     /// <summary>True when the provider itself created this file and cleanup may delete it.</summary>
     public required bool IsTemporary { get; init; }
+
+    /// <summary>
+    /// Game build read from the replay header, or null if it could not be read. Carried
+    /// through so the launcher can compare it against the installed game before starting
+    /// anything, rather than letting the mismatch surface as an error inside AoE4.
+    /// </summary>
+    public int? GameBuild { get; init; }
 }
 
 /// <summary>

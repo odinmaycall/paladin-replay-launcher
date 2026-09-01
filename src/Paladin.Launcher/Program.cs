@@ -180,6 +180,10 @@ internal static class Program
         Report(ui, "Steam", env.SteamExePath);
         Report(ui, "AoE4 install", env.Aoe4InstallDir);
         Report(ui, "AoE4 game exe", env.Aoe4GameExePath);
+        if (env.Aoe4GameBuild is not null)
+            ui.Ok($"{"AoE4 build",-16} {env.Aoe4GameBuild} (from {env.Aoe4GameVersion})");
+        else if (env.Aoe4GameExePath is not null)
+            ui.Warn($"{"AoE4 build",-16} could not be read, so replay build checks will be skipped");
         Report(ui, "AoE4 Documents", env.Aoe4DocumentsPath);
         Report(ui, "Playback folder", env.PlaybackPath);
         foreach (var problem in env.Problems) ui.Warn(problem);

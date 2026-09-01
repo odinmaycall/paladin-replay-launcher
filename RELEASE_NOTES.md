@@ -1,7 +1,37 @@
-# Paladin Replay Launcher 0.1.0
+# Paladin Replay Launcher 0.2.0
 
-First prototype release. Opens an Age of Empires IV replay and puts your game settings
-back exactly as they were afterwards.
+Opens an Age of Empires IV replay and puts your game settings back exactly as they were
+afterwards.
+
+## New in 0.2.0 — it tells you when a replay is too old to play
+
+Age of Empires IV refuses replays recorded on an older build, with *"Due to a recent
+update, the replay is no longer available"* — which appears **inside the game**, minutes
+after you clicked, with nothing to act on.
+
+The launcher now reads the build out of the replay header and compares it with your
+installed game before anything is downloaded:
+
+```
+[warn] This replay was recorded on game build 10884, and Age of Empires IV is now
+       on 11308. It may refuse to play with "Due to a recent update, the replay
+       is no longer available".
+       It may still play - not every patch breaks replays. Let it try first.
+       If it fails, you can roll the game back one build in Steam:
+         right-click Age of Empires IV -> Properties -> Betas -> previous_live
+       Switch back to 'None'/public afterwards to play multiplayer again.
+```
+
+This matters most **the day a patch lands**, when every existing replay is suddenly one
+build behind — exactly when you want to review tournament games from the old patch.
+
+It is advisory and never blocks: Relic state that not every patch breaks replays, so the
+launcher lets it try. For a replay that is many patches old it says so plainly, rather
+than sending you on a pointless rollback — `previous_live` only ever holds the single
+build before the current one.
+
+Both numbers are read, not guessed: the replay header stores a build at offset 2, and
+`RelicCardinal.exe` reports `16.3.<build>.0`. Confirmed identical on a live install.
 
 **Windows 10/11, 64-bit. Steam only** (no Game Pass — the launch path goes through Steam).
 No .NET runtime needed; everything is in the one file.

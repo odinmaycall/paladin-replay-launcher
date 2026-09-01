@@ -589,3 +589,47 @@ format. If that is ever wanted, ask them first.**
 | Live AoE4 replay launch with `-dev` | Ran. 4 of 23 protected files changed; all 4 restored and verified |
 | Control run (normal launch, no replay) | **Not run** — `--observe` exists for it; needed to interpret the above |
 | `-replay` without `-dev` | **Not run** (Phase 4) |
+
+
+## Old replays, and what this does about them
+
+Age of Empires IV refuses a replay recorded on a build it no longer matches. The launcher
+reads both numbers before downloading anything — the replay header stores a build at
+offset 2, and `RelicCardinal.exe` reports `16.3.<build>.0`, confirmed identical on a live
+install — and says so plainly instead of letting the failure surface inside the game.
+
+It is advisory. Relic state that not every patch breaks replays, so a mismatch is a
+reason to warn, never to refuse.
+
+**What it will not do: switch your game build.** Steam publishes a `previous_live` branch
+("Archive of previous live build", no password) holding the single build before the
+current one, and rolling back to it is four clicks in Steam's own UI. The launcher tells
+you how, but does not do it for you, because:
+
+- Steam offers no supported command or URL for switching branches, so automating it means
+  writing Steam's own `appmanifest` and forcing an update. Getting that wrong damages a
+  48 GB install.
+- It replaces the live install rather than making a copy — you would re-download in both
+  directions and could not play current-patch multiplayer until you switched back.
+- A tool whose entire purpose is not touching your files without asking should not
+  silently re-version your game to watch a replay.
+
+For a replay that is **many** patches old, `previous_live` cannot go back far enough, and
+the launcher says so rather than suggesting a pointless rollback. Reconstructing an
+arbitrary historical build is a real project — [EKYavsil's AoE4 Replay
+Launcher](https://github.com/EKYavsil/AoE4-Replay-Launcher) does it with DepotDownloader,
+restic deduplication and hardlinked composition, at roughly 55 GB on disk. Separate
+project, not affiliated with this one.
+
+### Note for developers on Smart App Control machines
+
+`dotnet run` on the test project can fail with `0x800711C7` when Smart App Control blocks
+the freshly built `Paladin.Core.dll`. The suite runs fine as a single file, which bundles
+it:
+
+```bash
+dotnet publish tests/Paladin.Tests/Paladin.Tests.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o ./.testpub
+./.testpub/Paladin.Tests.exe
+```
+
+CI is unaffected — GitHub's runners do not enforce Smart App Control.

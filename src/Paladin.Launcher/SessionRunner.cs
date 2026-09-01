@@ -95,6 +95,25 @@ public sealed class SessionRunner
             }
             _ui.Ok($"Replay prepared ({replay.SizeBytes:N0} bytes)");
 
+            // Say up front whether this replay can play on the installed build. Left to
+            // itself the mismatch surfaces as "Due to a recent update, the replay is no
+            // longer available" inside AoE4, minutes later, with nothing to act on.
+            var compatibility = BuildCompatibility.Compare(replay.GameBuild, env.Aoe4GameBuild);
+            _log.Info($"Build check: replay {replay.GameBuild?.ToString() ?? "?"} vs game {env.Aoe4GameBuild?.ToString() ?? "?"} -> {compatibility.Verdict}");
+            session.ReplayGameBuild = replay.GameBuild;
+            session.InstalledGameBuild = env.Aoe4GameBuild;
+
+            if (compatibility.ShouldWarn)
+            {
+                _ui.Warn(compatibility.Message);
+                foreach (var line in BuildCompatibility.SuggestionsFor(compatibility)) _ui.Note(line);
+                session.Notes.Add($"Build mismatch: replay {replay.GameBuild}, game {env.Aoe4GameBuild}.");
+            }
+            else if (compatibility.Verdict == BuildCompatibility.Verdict.Match)
+            {
+                _ui.Ok($"Replay matches your game build ({replay.GameBuild})");
+            }
+
             // ---- 4. Snapshot BEFORE anything is placed or launched ----------------
             _ui.Pending("Creating settings snapshot ...");
             session.PreLaunch = snapshots.Capture(env.Aoe4DocumentsPath!);

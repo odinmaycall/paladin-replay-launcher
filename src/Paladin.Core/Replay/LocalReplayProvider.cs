@@ -41,6 +41,7 @@ public sealed class LocalReplayProvider : IReplayProvider
             SuggestedFileName = ReplayArchive.StripCompressionExtension(
                 request.SuggestedName ?? Path.GetFileName(archive.Path)),
             SizeBytes = archive.Bytes,
+            GameBuild = verdict.GameBuild,
             // Only a file this provider created may be cleaned up; never the user's own.
             IsTemporary = archive.WasCompressedAs != ReplayArchive.ArchiveKind.None,
         });

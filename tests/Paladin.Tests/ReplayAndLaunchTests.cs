@@ -117,6 +117,112 @@ public static class ReplayAndLaunchTests
 
         // ---------------------------------------------------------------------------
 
+        // ---------------------------------------------------------------------------
+
+        Suite("BuildCompatibility (old-replay detection)");
+
+        Test("reads the build out of the real AoE4 version string", () =>
+        {
+            // Measured on a live install: RelicCardinal.exe reports 16.3.11308.0, and a
+            // replay recorded on it stores 11308 in its header. Same number.
+            Equal(11308, BuildCompatibility.ParseGameBuild("16.3.11308.0"));
+            Equal(10884, BuildCompatibility.ParseGameBuild("16.2.10884.0"));
+        });
+
+        Test("an unreadable version yields no opinion rather than a wrong warning", () =>
+        {
+            Equal(null, BuildCompatibility.ParseGameBuild(null));
+            Equal(null, BuildCompatibility.ParseGameBuild(""));
+            Equal(null, BuildCompatibility.ParseGameBuild("16.3"), "too few components");
+            Equal(null, BuildCompatibility.ParseGameBuild("16.3.notanumber.0"));
+            Equal(null, BuildCompatibility.ParseGameBuild("16.3.0.0"), "a zero build is not a real build");
+        });
+
+        Test("matching builds are reported as a match and warn about nothing", () =>
+        {
+            var r = BuildCompatibility.Compare(11308, 11308);
+            Equal(BuildCompatibility.Verdict.Match, r.Verdict);
+            False(r.ShouldWarn, "nothing to say");
+            Equal(0, BuildCompatibility.SuggestionsFor(r).Count);
+        });
+
+        Test("an older replay warns and points at the previous_live branch", () =>
+        {
+            // The case that appears the day a patch lands: every existing replay is
+            // suddenly one build behind. Both builds observed on real live replays.
+            var r = BuildCompatibility.Compare(10884, 11308);
+            Equal(BuildCompatibility.Verdict.ReplayOlder, r.Verdict);
+            True(r.ShouldWarn, "the user needs telling");
+            True(r.Message.Contains("10884") && r.Message.Contains("11308"), "both builds named");
+
+            var advice = string.Join(" ", BuildCompatibility.SuggestionsFor(r));
+            True(advice.Contains("previous_live"), "names the branch that actually holds the old build");
+            True(advice.Contains("Switch back"), "reminds them to undo it");
+            True(advice.Contains("may still play"), "does not overstate: not every patch breaks replays");
+        });
+
+        Test("a replay several patches old does NOT get told to use previous_live", () =>
+        {
+            // Real case: a build-7149 replay from Nov 2025 against a build-11308 install.
+            // previous_live only ever holds ONE build back, so recommending it here would
+            // be confidently wrong advice.
+            var r = BuildCompatibility.Compare(7149, 11308);
+            var advice = string.Join(" ", BuildCompatibility.SuggestionsFor(r));
+            False(advice.Contains("Properties -> Betas"), "must not send them on a pointless rollback");
+            True(advice.Contains("unlikely to go back far enough"), "says why");
+            True(advice.Contains("EKYavsil"), "points at the tool that can actually do it");
+        });
+
+        Test("the near/far boundary is the documented gap, not a guess per call site", () =>
+        {
+            // Checks the actionable instruction, not the word: the "too old" advice
+            // mentions previous_live too, precisely to explain why it will not help.
+            const string DoIt = "Properties -> Betas";
+
+            var near = BuildCompatibility.Compare(11308 - BuildCompatibility.PlausiblyRecentBuildGap, 11308);
+            True(string.Join(" ", BuildCompatibility.SuggestionsFor(near)).Contains(DoIt), "at the limit, the rollback is still offered");
+
+            var far = BuildCompatibility.Compare(11308 - BuildCompatibility.PlausiblyRecentBuildGap - 1, 11308);
+            False(string.Join(" ", BuildCompatibility.SuggestionsFor(far)).Contains(DoIt), "one past it, the rollback is not offered");
+        });
+
+        Test("a newer replay tells the user to update instead", () =>
+        {
+            var r = BuildCompatibility.Compare(11308, 10884);
+            Equal(BuildCompatibility.Verdict.ReplayNewer, r.Verdict);
+            True(r.ShouldWarn, "still worth saying");
+            True(string.Join(" ", BuildCompatibility.SuggestionsFor(r)).Contains("update"), "the fix is a game update");
+        });
+
+        Test("an unknown build on either side stays silent", () =>
+        {
+            foreach (var r in new[]
+                     {
+                         BuildCompatibility.Compare(null, 11308),
+                         BuildCompatibility.Compare(11308, null),
+                         BuildCompatibility.Compare(null, null),
+                     })
+            {
+                Equal(BuildCompatibility.Verdict.Unknown, r.Verdict);
+                False(r.ShouldWarn, "never warn from a value we could not read");
+            }
+        });
+
+        Test("the build survives from the replay header through acquisition", () =>
+        {
+            using var dir = new TempDir("build-carry");
+            var path = Path.Combine(dir.Path, "AgeIV_Replay_1");
+            var bytes = new byte[4096];
+            RealReplayHeader.CopyTo(bytes, 0);
+            File.WriteAllBytes(path, bytes);
+
+            var acquired = new LocalReplayProvider(new PaladinLog(false))
+                .AcquireAsync(new ReplayRequest { Kind = "local", Value = path }, dir.Path, default)
+                .GetAwaiter().GetResult();
+
+            Equal(0x2c2c, acquired.GameBuild!.Value, "the header build reaches the launcher");
+        });
+
         Suite("ReplayArchive (compressed downloads)");
 
         Test("detects gzip by magic bytes, which is how Microsoft's endpoint really serves replays", () =>

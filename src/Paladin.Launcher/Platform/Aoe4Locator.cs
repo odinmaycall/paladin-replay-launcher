@@ -2,6 +2,7 @@ using System.Runtime.Versioning;
 using Microsoft.Win32;
 using Paladin.Core.Config;
 using Paladin.Core.Logging;
+using Paladin.Core.Replay;
 using Paladin.Core.Steam;
 
 namespace Paladin.Launcher.Platform;
@@ -13,6 +14,16 @@ public sealed class Aoe4Environment
     public string? Aoe4GameExePath { get; init; }
     public string? Aoe4DocumentsPath { get; init; }
     public string? PlaybackPath { get; init; }
+
+    /// <summary>Full file version of the game binary, e.g. "16.3.11308.0".</summary>
+    public string? Aoe4GameVersion { get; init; }
+
+    /// <summary>
+    /// The build component of that version (11308 in the example), which is the same
+    /// number a replay stores in its header. Null when it could not be read.
+    /// </summary>
+    public int? Aoe4GameBuild { get; init; }
+
     public List<string> Problems { get; } = new();
 
     /// <summary>The Documents folder is the only hard requirement for the Shield.</summary>
@@ -40,11 +51,15 @@ public static class Aoe4Locator
         var gameExe = installDir is null ? null : FindGameExe(installDir);
         var documents = config.Aoe4DocumentsPathOverride ?? FindAoe4DocumentsPath(log);
 
+        var gameVersion = gameExe is null ? null : ReadFileVersion(gameExe, log);
+
         var env = new Aoe4Environment
         {
             SteamExePath = steamExe,
             Aoe4InstallDir = installDir,
             Aoe4GameExePath = gameExe,
+            Aoe4GameVersion = gameVersion,
+            Aoe4GameBuild = BuildCompatibility.ParseGameBuild(gameVersion),
             Aoe4DocumentsPath = documents,
             PlaybackPath = documents is null
                 ? null
@@ -66,8 +81,30 @@ public static class Aoe4Locator
 
         log.Info($"Steam:      {steamExe ?? "(not found)"}");
         log.Info($"AoE4 game:  {gameExe ?? installDir ?? "(not found)"}");
+        log.Info($"AoE4 build: {gameVersion ?? "(unknown)"}");
         log.Info($"AoE4 docs:  {documents ?? "(not found)"}");
         return env;
+    }
+
+    /// <summary>
+    /// The game binary's file version, e.g. "16.3.11308.0". Confirmed on a live install
+    /// that the third component matches the build a replay records in its header.
+    /// Returns null on any failure so the build check simply says nothing rather than
+    /// producing a warning from a value it could not read.
+    /// </summary>
+    public static string? ReadFileVersion(string exePath, PaladinLog log)
+    {
+        try
+        {
+            var info = System.Diagnostics.FileVersionInfo.GetVersionInfo(exePath);
+            var version = info.FileVersion;
+            return string.IsNullOrWhiteSpace(version) ? null : version.Trim();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            log.Debug($"Could not read the version of {exePath}: {ex.Message}");
+            return null;
+        }
     }
 
     // ---- Steam -------------------------------------------------------------------
