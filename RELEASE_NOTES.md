@@ -1,15 +1,73 @@
-# Paladin Replay Launcher 0.2.0
+# Paladin Replay Launcher 0.3.0
 
 Opens an Age of Empires IV replay and puts your game settings back exactly as they were
 afterwards.
 
-## New in 0.2.0 — it tells you when a replay is too old to play
+## New in 0.3.0 — it is code-signed
+
+This is the first signed build. Windows no longer needs to guess whether to trust it:
+
+- **SmartScreen** may still show a reputation notice on a brand-new signed file for a
+  little while; that fades as downloads accrue.
+- **Smart App Control** accepts a validly signed file, so the `0x800711C7` block that
+  stopped some people running 0.2.0 no longer applies.
+
+The publisher shown by Windows is **SignPath Foundation**, because the certificate is
+theirs — see the code signing policy below. Check a download yourself:
+
+```powershell
+Get-AuthenticodeSignature .\PaladinReplayLauncher.exe | Format-List Status, SignerCertificate
+```
+
+`Status` must read `Valid`. `SHA256SUMS.txt` on this page is the hash of the exact file
+that was signed.
+
+Also new: `--install` now says what it is about to change (one folder, one per-user
+registry key) before it does it.
+
+**Windows 10/11, 64-bit. Steam only** (no Game Pass — the launch path goes through Steam).
+No .NET runtime needed; everything is in the one file.
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://signpath.io), certificate by
+[SignPath Foundation](https://signpath.org).
+
+Every release is built by this repository's own release workflow from a tagged commit
+and signed from that automated build; a tag that cannot be signed is refused.
+Committers, reviewers and approvers: [OdinMayCall](https://github.com/odinmaycall).
+
+Privacy: this program will not transfer any information to other networked systems
+unless specifically requested by the user or the person installing or operating it. Its
+only network request is downloading the replay named in the link you clicked. No
+telemetry. Full policy: [README — Code signing policy](README.md#code-signing-policy).
+
+## Install
+
+1. Download `PaladinReplayLauncher.exe`.
+2. Open a terminal where you saved it and run it once:
+
+   ```
+   PaladinReplayLauncher.exe --install
+   ```
+
+   It tells you what it is about to do, then copies itself to
+   `%LOCALAPPDATA%\Programs\PaladinReplayLauncher\` and registers the `paladin://` link
+   handler for your user account. No administrator rights are needed.
+3. You can then delete the file you downloaded.
+4. Check it found everything:
+
+   ```
+   PaladinReplayLauncher.exe --doctor
+   ```
+
+## From 0.2.0 — it tells you when a replay is too old to play
 
 Age of Empires IV refuses replays recorded on an older build, with *"Due to a recent
 update, the replay is no longer available"* — which appears **inside the game**, minutes
 after you clicked, with nothing to act on.
 
-The launcher now reads the build out of the replay header and compares it with your
+The launcher reads the build out of the replay header and compares it with your
 installed game before anything is downloaded:
 
 ```
@@ -22,52 +80,10 @@ installed game before anything is downloaded:
        Switch back to 'None'/public afterwards to play multiplayer again.
 ```
 
-This matters most **the day a patch lands**, when every existing replay is suddenly one
-build behind — exactly when you want to review tournament games from the old patch.
-
 It is advisory and never blocks: Relic state that not every patch breaks replays, so the
 launcher lets it try. For a replay that is many patches old it says so plainly, rather
 than sending you on a pointless rollback — `previous_live` only ever holds the single
 build before the current one.
-
-Both numbers are read, not guessed: the replay header stores a build at offset 2, and
-`RelicCardinal.exe` reports `16.3.<build>.0`. Confirmed identical on a live install.
-
-**Windows 10/11, 64-bit. Steam only** (no Game Pass — the launch path goes through Steam).
-No .NET runtime needed; everything is in the one file.
-
-## Install
-
-1. Download `PaladinReplayLauncher.exe`.
-2. Open a terminal where you saved it and run it once:
-
-   ```
-   PaladinReplayLauncher.exe --install
-   ```
-
-   It copies itself to `%LOCALAPPDATA%\Programs\PaladinReplayLauncher\` and registers the
-   `paladin://` link handler for your user account. No administrator rights are needed.
-3. You can then delete the file you downloaded.
-4. Check it found everything:
-
-   ```
-   PaladinReplayLauncher.exe --doctor
-   ```
-
-## Read this before you install: it is not code-signed
-
-This build has no Authenticode signature, so Windows may refuse to run it.
-
-- **SmartScreen** will likely show *"Windows protected your PC"*. Choose **More info →
-  Run anyway**.
-- **Smart App Control**, if enabled, may block it outright with
-  `0x800711C7 — An Application Control policy has blocked this file`. There is no
-  workaround from our side, and turning Smart App Control off is a one-way change that
-  Windows cannot undo without a reinstall, so **please do not disable it**. If you hit
-  this, the launcher is not usable for you yet; a signed build is what fixes it.
-
-Whether an unsigned build is allowed is reputation-driven and varies between machines and
-between builds. Signing is the next thing on the list.
 
 ## What it does
 
@@ -139,7 +155,6 @@ Backups, logs and session records live in `%LOCALAPPDATA%\PaladinReplayLauncher\
 
 ## Known limitations
 
-- **Unsigned** — see above. The main thing standing between this and general use.
 - **Steam only.** Game Pass installs are not supported.
 - Whether `-dev` is genuinely required for replay playback is **not yet established**.
   `--no-dev` exists to test it.

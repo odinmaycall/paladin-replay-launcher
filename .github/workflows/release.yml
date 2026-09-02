@@ -5,7 +5,21 @@ name: Release
 # published binary is always reproducibly tied to a specific commit, and nobody
 # has to remember the publish flags.
 #
-#   git tag v0.1.1 && git push origin v0.1.1
+#   git tag v0.3.0 && git push origin v0.3.0
+#
+# Code signing: a tagged release is SIGNED through SignPath (free OSS
+# certificate issued to SignPath Foundation) and refused if it cannot be.
+# That rule exists so an unsigned binary can never reach the release page by
+# accident — Windows Smart App Control blocks unsigned files outright on some
+# machines, with no user override. Manual `workflow_dispatch` runs still build
+# an unsigned artifact for testing; they never publish a release.
+#
+# Needed once, after SignPath accepts the project:
+#   secret  SIGNPATH_API_TOKEN        (a SignPath CI user's API token)
+#   variable SIGNPATH_ORGANIZATION_ID (from the SignPath organization page)
+#   and in SignPath: project slug "paladin-replay-launcher", signing policy
+#   "release-signing", an artifact configuration for one exe with product-name
+#   and version metadata restrictions matching Paladin.Launcher.csproj.
 
 on:
   push:
@@ -14,6 +28,9 @@ on:
 
 permissions:
   contents: write
+
+env:
+  SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
 
 jobs:
   build:
@@ -48,6 +65,53 @@ jobs:
           --output ./release
           --nologo
 
+      # ---------- signing (tags only) ----------
+      - name: Refuse to release unsigned
+        if: startsWith(github.ref, 'refs/tags/') && env.SIGNPATH_API_TOKEN == ''
+        shell: pwsh
+        run: |
+          Write-Error "SIGNPATH_API_TOKEN is not set: a release tag must be signed. Add the secret (and the SIGNPATH_ORGANIZATION_ID variable) once SignPath has accepted the project, then re-run."
+          exit 1
+
+      # SignPath signs a GitHub artifact, not a loose file: upload the unsigned
+      # exe, hand its artifact id over, and get the signed copy back.
+      - name: Upload unsigned build for signing
+        id: upload-unsigned
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+          name: PaladinReplayLauncher-unsigned
+          path: release/PaladinReplayLauncher.exe
+          if-no-files-found: error
+
+      - name: Sign (SignPath Foundation)
+        id: sign
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: paladin-replay-launcher
+          signing-policy-slug: release-signing
+          github-artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
+          # Every OSS signing request needs a person to approve it in SignPath;
+          # the job waits up to 30 minutes for that click.
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 1800
+          output-artifact-directory: release-signed
+
+      - name: Verify the signature and take the signed file
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $signed = Get-ChildItem -Path release-signed -Recurse -Filter PaladinReplayLauncher.exe | Select-Object -First 1
+          if (-not $signed) { Write-Error "SignPath returned no PaladinReplayLauncher.exe"; exit 1 }
+          $sig = Get-AuthenticodeSignature $signed.FullName
+          Write-Host "Signature status: $($sig.Status) — signer: $($sig.SignerCertificate.Subject)"
+          if ($sig.Status -ne 'Valid') { Write-Error "Signature is not valid ($($sig.Status)); refusing to release."; exit 1 }
+          Copy-Item $signed.FullName release/PaladinReplayLauncher.exe -Force
+
+      # ---------- publish ----------
       - name: Checksum
         shell: pwsh
         run: |

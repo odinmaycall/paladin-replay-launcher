@@ -9,11 +9,16 @@
 
     <!-- Reported by the version command and stamped into the exe's file properties,
          so a user reporting a problem can say which build they are on. -->
-    <Version>0.2.0</Version>
-    <AssemblyVersion>0.2.0.0</AssemblyVersion>
-    <FileVersion>0.2.0.0</FileVersion>
+    <Version>0.3.0</Version>
+    <AssemblyVersion>0.3.0.0</AssemblyVersion>
+    <FileVersion>0.3.0.0</FileVersion>
+    <!-- Product and version are also what SignPath's file-metadata restrictions
+         check on every signing request: the exe must carry this product name and
+         one consistent version, or the request is refused. -->
     <Product>Paladin Replay Launcher</Product>
     <Company>Paladin</Company>
+    <Authors>OdinMayCall</Authors>
+    <Copyright>Copyright (c) 2026 OdinMayCall. MIT License.</Copyright>
     <Description>Opens an Age of Empires IV replay and restores your game settings afterwards.</Description>
   </PropertyGroup>
   <ItemGroup>

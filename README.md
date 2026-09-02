@@ -25,6 +25,57 @@ a machine with AoE4 installed** — see [Phase 4](#phase-4--is--dev-required).
 
 ---
 
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://signpath.io), certificate by
+[SignPath Foundation](https://signpath.org).
+
+Every published `PaladinReplayLauncher.exe` is built by this repository's own
+[release workflow](.github/workflows/release.yml) from a tagged commit, and signed by
+SignPath from that automated build. A release tag is refused unless it can be signed,
+so an unsigned binary can no longer reach the release page by accident. The publisher
+shown by Windows is **SignPath Foundation**, because the certificate is theirs.
+
+**Team roles**
+
+| Role | Members |
+|---|---|
+| Committers and reviewers | [OdinMayCall](https://github.com/odinmaycall) |
+| Approvers (each signing request) | [OdinMayCall](https://github.com/odinmaycall) |
+
+Changes proposed by anyone else arrive as pull requests and are reviewed by a committer
+before merging. Every release is approved by hand in SignPath before it is signed.
+
+**Privacy policy**
+
+This program will not transfer any information to other networked systems unless
+specifically requested by the user or the person installing or operating it.
+
+Concretely: the only network request it ever makes is downloading the replay named in
+the `paladin://` link the user clicked, from the URL in that link (Microsoft's public
+replay endpoint when launched from the Paladin site). It talks to Steam only on this
+machine, to start the game. It sends no telemetry, no crash reports and no usage data,
+and it never reads or transmits the settings it protects — backups stay under
+`%LOCALAPPDATA%\PaladinReplayLauncher\` on your own disk.
+
+**What it changes on your system, and how to undo it**
+
+`--install` copies the program to `%LOCALAPPDATA%\Programs\PaladinReplayLauncher\` and
+registers the `paladin://` link handler for your user account under
+`HKCU\Software\Classes\paladin`. It says so before it does it, needs no administrator
+rights, and `--uninstall` removes the handler again. Nothing else is installed.
+
+**Verifying a download**
+
+```powershell
+Get-AuthenticodeSignature .\PaladinReplayLauncher.exe | Format-List Status, SignerCertificate
+```
+
+`Status` must read `Valid` and the signer `SignPath Foundation`. The release page also
+carries the SHA-256 of the exact file that was signed.
+
+---
+
 ## Why C# / .NET 10 and not Rust
 
 Rust was the stated preference and it would suit this job well. It was not used because

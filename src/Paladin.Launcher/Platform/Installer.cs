@@ -52,6 +52,13 @@ public static class Installer
         }
 
         var target = InstalledExePath;
+
+        // Say what is about to change BEFORE changing it: a copy into a per-user
+        // folder and one per-user registry key. Both are undone by --uninstall.
+        ui.Note($"This will copy the program to {InstallDirectory}");
+        ui.Note("and register the paladin:// link handler for your user account (HKCU\\Software\\Classes\\paladin).");
+        ui.Note("No administrator rights are needed. \"--uninstall\" reverses it.");
+
         try
         {
             Directory.CreateDirectory(InstallDirectory);
