@@ -179,8 +179,12 @@ certificate will **not** satisfy SAC.
 For **development**, use `dotnet run`, and re-publish/`--install` when you need the real
 exe — if a new build is blocked, that is SAC, not your code.
 
-Turning Smart App Control off is a one-way change — Windows cannot re-enable it without a
-reinstall — so it must never be asked of a user.
+Turning Smart App Control off used to be a one-way change. Microsoft's own FAQ now says recent
+Windows updates allow it to be re-enabled from Windows Security without a clean installation
+(confirmed on a Windows 11 Home 26200 machine, toggled off and on without a reboot), so a user
+on an up-to-date build can switch it off to install this launcher and switch it back on after.
+Older builds may still be one-way, so never present it as risk-free; a signed release remains
+the real fix, and Paladin's site offers the replay file itself (`.rec`) as a launcher-free path.
 
 For comparison: aoe4replays.gg's launcher is also unsigned and also carries an
 un-cleared Mark-of-the-Web, and runs fine on the same machine. Reputation accrued over
