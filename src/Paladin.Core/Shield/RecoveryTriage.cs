@@ -19,7 +19,13 @@ public static class RecoveryTriage
     /// </summary>
     public static readonly TimeSpan DefaultLaterEditGrace = TimeSpan.FromHours(6);
 
-    public sealed record Result(List<FileChange> Actionable, List<FileChange> Deferred);
+    /// <summary>
+    /// Actionable: the replay's doing, restore them. Deferred: changed long after the
+    /// session, leave them. Bookkeeping: timestamps and run counters the game rewrites
+    /// on every launch — never damage, never restored, reported so the user sees why
+    /// nothing happens.
+    /// </summary>
+    public sealed record Result(List<FileChange> Actionable, List<FileChange> Deferred, List<FileChange> Bookkeeping);
 
     public static Result Triage(
         IReadOnlyList<FileChange> changes,
@@ -32,10 +38,16 @@ public static class RecoveryTriage
 
         var actionable = new List<FileChange>();
         var deferred = new List<FileChange>();
+        var bookkeeping = new List<FileChange>();
 
         foreach (var change in changes)
         {
             if (change.Kind == ChangeKind.Unchanged) continue;
+            if (change.Kind == ChangeKind.BookkeepingOnly)
+            {
+                bookkeeping.Add(change);
+                continue;
+            }
 
             // A file that is gone now has no timestamp to judge, so it is always
             // actionable — a deleted settings file is exactly what recovery is for.
@@ -45,6 +57,6 @@ public static class RecoveryTriage
                 actionable.Add(change);
         }
 
-        return new Result(actionable, deferred);
+        return new Result(actionable, deferred, bookkeeping);
     }
 }

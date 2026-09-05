@@ -85,14 +85,18 @@ public sealed class RecoveryRunner
         var current = snapshots.Capture(session.Aoe4DocumentsPath);
         var changes = ChangeDetector.Compare(session.PreLaunch, current);
 
-        var (actionable, deferred) = RecoveryTriage.Triage(changes, current, session.LastHeartbeatUtc, LaterEditGrace);
+        var (actionable, deferred, bookkeeping) = RecoveryTriage.Triage(changes, current, session.LastHeartbeatUtc, LaterEditGrace);
 
         foreach (var skipped in deferred)
             _ui.Note($"Left alone (changed long after the session): {skipped.RelativePath}");
+        foreach (var b in bookkeeping)
+            _log.Debug($"Bookkeeping-only difference left as the game wrote it: {b.RelativePath}");
 
         if (actionable.Count == 0)
         {
-            _ui.Ok("Your settings already match the pre-replay state. Nothing to restore.");
+            _ui.Ok(bookkeeping.Count > 0
+                ? $"Only timestamps and counters changed ({bookkeeping.Count} file(s)), as the game does on every launch. Nothing to restore."
+                : "Your settings already match the pre-replay state. Nothing to restore.");
             session.RestorePending = false;
             session.RestoreCompletedUtc = DateTime.UtcNow;
             session.Outcome = SessionOutcome.RecoveredAfterCrash;
@@ -106,14 +110,10 @@ public sealed class RecoveryRunner
         foreach (var change in actionable.Take(12)) _ui.Note(change.ToString());
         if (actionable.Count > 12) _ui.Note($"... and {actionable.Count - 12} more");
 
-        if (interactive && !_ui.Confirm("Restore these files from the pre-replay backup?", defaultAnswer: true))
-        {
-            _ui.Note("Left as they are. The backup stays at:");
-            _ui.Note($"  {session.BackupPath}");
-            session.Notes.Add($"Recovery declined by the user at {DateTime.UtcNow:O}.");
-            _store.Save(session);
-            return false;
-        }
+        // Paladin Shield restores on its own, exactly as it does at the end of every
+        // session; an interrupted session is not a reason to start asking. Files changed
+        // long after the session were deferred above, which is the only judgement call.
+        _ui.Note("Restoring them from the pre-replay backup now.");
 
         var restorer = new RestoreService(policy, _log, _config.QuarantineCreatedFiles);
         session.Restored = restorer.Restore(

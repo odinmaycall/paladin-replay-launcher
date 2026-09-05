@@ -486,5 +486,29 @@ public static class ShieldTests
             var result = RecoveryTriage.Triage(changes, new List<FileSnapshot>(), DateTime.UtcNow);
             Equal(0, result.Actionable.Count + result.Deferred.Count, "nothing to do");
         });
+
+        Test("bookkeeping-only differences are reported apart and never restored", () =>
+        {
+            // Timestamps and run counters the game rewrites on every launch, changed
+            // inside the grace window like a real session change would be.
+            var heartbeat = new DateTime(2026, 9, 5, 14, 31, 0, DateTimeKind.Utc);
+            var current = new List<FileSnapshot>
+            {
+                new() { RelativePath = "local.ini", Sha256 = "bbb", ModifiedUtc = heartbeat.AddMinutes(10) },
+                new() { RelativePath = "configuration_system.lua", Sha256 = "ccc", ModifiedUtc = heartbeat.AddMinutes(10) },
+            };
+            var changes = new List<FileChange>
+            {
+                new() { RelativePath = "local.ini", Kind = ChangeKind.BookkeepingOnly },
+                new() { RelativePath = "configuration_system.lua", Kind = ChangeKind.BookkeepingOnly },
+                new() { RelativePath = "keyBindingProfiles/oMc.rkp", Kind = ChangeKind.Modified },
+            };
+
+            var result = RecoveryTriage.Triage(changes, current, heartbeat);
+            Equal(2, result.Bookkeeping.Count, "the two bookkeeping files are set apart");
+            Equal(1, result.Actionable.Count, "the real change is still restored");
+            Equal(0, result.Deferred.Count, "nothing deferred");
+            True(result.Actionable[0].RelativePath == "keyBindingProfiles/oMc.rkp", "and it is the right one");
+        });
     }
 }

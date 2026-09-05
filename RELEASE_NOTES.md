@@ -5,6 +5,10 @@ afterwards.
 
 ## Unreleased
 
+- Recovery after an interrupted session restores your settings on its own, the way
+  every normal session ends, instead of asking. When the only differences are the
+  timestamps and run counters the game rewrites on every launch, it says so and
+  restores nothing, rather than asking about files it was never going to touch.
 - The console no longer prints the full path to your game folder. It shows
   `~\...\My Games\Age of Empires IV` instead, so a screenshot or a stream of the
   launcher window never carries your Windows username or the folders your
