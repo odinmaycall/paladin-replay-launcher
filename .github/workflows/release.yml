@@ -55,6 +55,26 @@ jobs:
     runs-on: windows-latest
 
     steps:
+      # Say up front which path this run takes, so a manual run that was
+      # meant to publish but was started without the box ticked or the tag
+      # filled in cannot pass quietly as a test build.
+      - name: What this run will do
+        shell: pwsh
+        run: |
+          $isTag = "${{ env.IS_TAG }}" -eq "true"
+          $unsigned = "${{ env.UNSIGNED_RELEASE }}" -eq "true"
+          $wantsUnsigned = "${{ inputs.publish_unsigned }}" -eq "true"
+          $tag = "${{ inputs.tag }}"
+          $line = if ($isTag) { "SIGNED release of pushed tag ${{ github.ref_name }}" }
+                  elseif ($unsigned) { "UNSIGNED release of $tag (publish_unsigned ticked)" }
+                  else { "TEST BUILD ONLY - no release (publish_unsigned=$wantsUnsigned, tag='$tag')" }
+          Write-Host $line
+          "### $line" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          if ($wantsUnsigned -and -not $unsigned) {
+            Write-Error "publish_unsigned is ticked but the tag box is empty: enter the tag (e.g. v0.3.0) and run again."
+            exit 1
+          }
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-dotnet@v4
