@@ -52,7 +52,7 @@ internal static class Program
         //
         // Skipped for the commands where healing would fight the user's intent: install
         // registers by itself, and uninstall/unregister are explicit requests to remove it.
-        if (options.Command is not (Command.Install or Command.Uninstall or Command.UnregisterProtocol or Command.Help))
+        if (options.Command is not (Command.Install or Command.Uninstall or Command.UnregisterProtocol or Command.Help or Command.RaiseWindow))
             Installer.EnsureRegistrationCurrent(log, ui);
 
         try
@@ -95,6 +95,15 @@ internal static class Program
                 case Command.Recover:
                     return new RecoveryRunner(config, log, ui, store).RunPending(interactive: !options.AssumeYes) == 0
                         ? ExitCodes.Ok : ExitCodes.RestoreFailed;
+
+                case Command.RaiseWindow:
+                {
+                    if (options.RaiseWindowPid <= 0) { ui.Fail("--raise-window needs a process id."); return ExitCodes.BadArguments; }
+                    var raised = await GameWindow.KeepInFrontAsync(
+                        options.RaiseWindowPid, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(2), 1, log, msg => ui.Ok(msg), CancellationToken.None);
+                    if (raised == 0) ui.Fail($"Could not bring pid {options.RaiseWindowPid} to the front.");
+                    return raised > 0 ? ExitCodes.Ok : ExitCodes.UnexpectedError;
+                }
 
                 case Command.Launch:
                     return await RunLaunch(options, config, log, ui, store);

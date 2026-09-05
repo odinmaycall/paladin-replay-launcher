@@ -5,6 +5,12 @@ afterwards.
 
 ## Unreleased
 
+- The game comes to the front on its own. When Age of Empires IV goes fullscreen a
+  few seconds after launch, whatever holds the foreground at that instant used to
+  win, and the game dropped to the taskbar behind a black screen until you found it
+  with Alt+Tab. The launcher now brings its window to the front when it appears and,
+  for the first 30 seconds, brings it back if it gets minimised. It never fights a
+  deliberate Alt+Tab. `BringGameToFront` in the config turns it off.
 - Recovery after an interrupted session restores your settings on its own, the way
   every normal session ends, instead of asking. When the only differences are the
   timestamps and run counters the game rewrites on every launch, it says so and

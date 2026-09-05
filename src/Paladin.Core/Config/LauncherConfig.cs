@@ -117,6 +117,17 @@ public sealed class LauncherConfig
     public int GameStartTimeoutSeconds { get; set; } = 300;
 
     /// <summary>
+    /// Bring the game's window to the front once it appears, and back again if it is
+    /// minimised while still starting. Anything holding the foreground when the game
+    /// goes fullscreen (Steam starting up, a screen recorder, the browser) otherwise
+    /// leaves it on the taskbar behind a black screen.
+    /// </summary>
+    public bool BringGameToFront { get; set; } = true;
+
+    /// <summary>For how long after the window first appears a minimised game is brought back.</summary>
+    public int GameWindowGuardSeconds { get; set; } = 30;
+
+    /// <summary>
     /// The same wait for --observe, where the person has to go and start the game
     /// themselves. Much longer, because the clock covers reading the prompt, finding
     /// Steam and the game's own start-up, not just the launch.

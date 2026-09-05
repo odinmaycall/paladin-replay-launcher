@@ -203,6 +203,15 @@ public sealed class SessionRunner
             else
             {
                 _ui.Ok("Age of Empires IV is running");
+                if (_config.BringGameToFront)
+                {
+                    // Off the main flow: the exit wait below must start now, and the
+                    // window can take a while to exist. Failures only go to the log.
+                    var guard = TimeSpan.FromSeconds(Math.Max(0, _config.GameWindowGuardSeconds));
+                    _ = GameWindow.KeepInFrontAsync(game.Pid, TimeSpan.FromSeconds(_config.GameStartTimeoutSeconds), guard, 3, _log, msg => _ui.Ok(msg), ct)
+                        .ContinueWith(t => _log.Warn($"Bringing the game to the front failed: {t.Exception?.GetBaseException().Message}"),
+                            TaskContinuationOptions.OnlyOnFaulted);
+                }
                 _ui.RunningBanner();
                 await monitor.WaitForExitAsync(game, ct, onHeartbeat: () => _store.Heartbeat(session));
                 _ui.Ok("Replay finished");

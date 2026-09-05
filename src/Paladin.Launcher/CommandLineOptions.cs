@@ -2,7 +2,10 @@ using Paladin.Core.Protocol;
 
 namespace Paladin.Launcher;
 
-public enum Command { Launch, Observe, Recover, Doctor, Install, Uninstall, RegisterProtocol, UnregisterProtocol, Version, Help }
+public enum Command { Launch, Observe, Recover, Doctor, Install, Uninstall, RegisterProtocol, UnregisterProtocol, Version, Help,
+    /// <summary>Maintenance: bring a process's window to the front (--raise-window pid).</summary>
+    RaiseWindow,
+}
 
 public sealed class CommandLineOptions
 {
@@ -17,6 +20,7 @@ public sealed class CommandLineOptions
     public bool KeepReplay { get; private set; }
     public bool ProtectExtended { get; private set; }
     public bool AssumeYes { get; private set; }
+    public int RaiseWindowPid { get; private set; }
     public bool Verbose { get; private set; }
     public bool ShowHelp { get; private set; }
 
@@ -94,6 +98,11 @@ public sealed class CommandLineOptions
 
                 case "--dry-run":
                     options.DryRun = true;
+                    break;
+
+                case "--raise-window":
+                    options.RaiseWindowPid = int.TryParse(Next(args, ref i), out var pid) ? pid : 0;
+                    options.Command = Command.RaiseWindow;
                     break;
 
                 case "--no-dev":
