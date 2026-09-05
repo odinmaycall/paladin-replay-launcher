@@ -47,7 +47,8 @@ permissions:
 env:
   SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
   IS_TAG: ${{ startsWith(github.ref, 'refs/tags/') }}
-  UNSIGNED_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_unsigned == true && inputs.tag != '' }}
+  # The boolean input arrives as a boolean or, on some paths, the string 'true'; accept both.
+  UNSIGNED_RELEASE: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish_unsigned == true || inputs.publish_unsigned == 'true') && inputs.tag != '' }}
   RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
