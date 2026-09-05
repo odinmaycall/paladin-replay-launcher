@@ -12,13 +12,14 @@ name: Release
 #   The tag is built, signed through SignPath, verified, and published.
 #
 #   UNSIGNED, on purpose (no signing available yet):
-#     Actions → Release → Run workflow → publish_unsigned = true, tag = v0.3.0
-#   A person chooses it, the tag must match the csproj version, and the release
-#   notes carry the SmartScreen warning. A PUSHED tag without the secret is still
-#   refused, so an unsigned binary never reaches the release page by accident —
-#   Windows Smart App Control blocks unsigned files outright on some machines,
-#   with no user override. Plain `workflow_dispatch` runs (publish_unsigned left
-#   false) still only build an unsigned artifact for testing.
+#     Actions → Release → Run workflow → tick publish_unsigned
+#   The tag is v<Version> from Paladin.Launcher.csproj (the optional tag box
+#   must agree with it), created at this commit. A person chooses it, and the
+#   release notes carry the SmartScreen warning. A PUSHED tag without the
+#   secret is still refused, so an unsigned binary never reaches the release
+#   page by accident — Windows Smart App Control blocks unsigned files outright
+#   on some machines, with no user override. Plain `workflow_dispatch` runs
+#   (publish_unsigned left unticked) only build an unsigned artifact for testing.
 #
 # Needed once, when a signing service accepts the project:
 #   secret  SIGNPATH_API_TOKEN        (a SignPath CI user's API token)
@@ -37,7 +38,7 @@ on:
         type: boolean
         default: false
       tag:
-        description: "Tag to release, e.g. v0.3.0 — must match <Version> in the csproj; created at this commit if it does not exist"
+        description: "Optional. Leave empty to release v<Version> from the csproj; if given it must match that version."
         type: string
         default: ""
 
@@ -48,35 +49,42 @@ env:
   SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
   IS_TAG: ${{ startsWith(github.ref, 'refs/tags/') }}
   # The boolean input arrives as a boolean or, on some paths, the string 'true'; accept both.
-  UNSIGNED_RELEASE: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish_unsigned == true || inputs.publish_unsigned == 'true') && inputs.tag != '' }}
-  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+  UNSIGNED_RELEASE: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish_unsigned == true || inputs.publish_unsigned == 'true') }}
 
 jobs:
   build:
     runs-on: windows-latest
 
     steps:
-      # Say up front which path this run takes, so a manual run that was
-      # meant to publish but was started without the box ticked or the tag
-      # filled in cannot pass quietly as a test build.
+      - uses: actions/checkout@v4
+
+      # Say up front which path this run takes and settle the release tag, so
+      # a manual run meant to publish can never pass quietly as a test build,
+      # and a release can never carry a version other than the csproj's.
       - name: What this run will do
         shell: pwsh
         run: |
           $isTag = "${{ env.IS_TAG }}" -eq "true"
           $unsigned = "${{ env.UNSIGNED_RELEASE }}" -eq "true"
-          $wantsUnsigned = "${{ inputs.publish_unsigned }}" -eq "true"
-          $tag = "${{ inputs.tag }}"
-          $line = if ($isTag) { "SIGNED release of pushed tag ${{ github.ref_name }}" }
-                  elseif ($unsigned) { "UNSIGNED release of $tag (publish_unsigned ticked)" }
-                  else { "TEST BUILD ONLY - no release (publish_unsigned=$wantsUnsigned, tag='$tag')" }
+          $csproj = Get-Content src/Paladin.Launcher/Paladin.Launcher.csproj -Raw
+          if ($csproj -notmatch '<Version>([^<]+)</Version>') { Write-Error "No <Version> in the csproj"; exit 1 }
+          $version = $Matches[1]
+          $releaseTag = ""
+          if ($isTag) {
+            $releaseTag = "${{ github.ref_name }}"
+            $line = "SIGNED release of pushed tag $releaseTag (csproj version $version)"
+          } elseif ($unsigned) {
+            $given = "${{ inputs.tag }}".Trim()
+            $releaseTag = if ($given) { $given } else { "v$version" }
+            if ($releaseTag -notmatch '^v\d+\.\d+\.\d+$') { Write-Error "Tag '$releaseTag' is not of the form vX.Y.Z"; exit 1 }
+            if ($releaseTag -ne "v$version") { Write-Error "Tag '$releaseTag' does not match the csproj version '$version' — change one of them"; exit 1 }
+            $line = "UNSIGNED release of $releaseTag (publish_unsigned ticked; tag from " + $(if ($given) { "the tag box" } else { "the csproj" }) + ")"
+          } else {
+            $line = "TEST BUILD ONLY - no release (publish_unsigned not ticked)"
+          }
           Write-Host $line
           "### $line" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
-          if ($wantsUnsigned -and -not $unsigned) {
-            Write-Error "publish_unsigned is ticked but the tag box is empty: enter the tag (e.g. v0.3.0) and run again."
-            exit 1
-          }
-
-      - uses: actions/checkout@v4
+          "RELEASE_TAG=$releaseTag" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -109,7 +117,7 @@ jobs:
         if: env.IS_TAG == 'true' && env.SIGNPATH_API_TOKEN == ''
         shell: pwsh
         run: |
-          Write-Error "SIGNPATH_API_TOKEN is not set: a pushed release tag must be signed. Add the secret (and the SIGNPATH_ORGANIZATION_ID variable) when a signing service has accepted the project, or publish deliberately unsigned with 'Run workflow' (publish_unsigned = true)."
+          Write-Error "SIGNPATH_API_TOKEN is not set: a pushed release tag must be signed. Add the secret (and the SIGNPATH_ORGANIZATION_ID variable) when a signing service has accepted the project, or publish deliberately unsigned with 'Run workflow' (publish_unsigned ticked)."
           exit 1
 
       # SignPath signs a GitHub artifact, not a loose file: upload the unsigned
@@ -151,21 +159,13 @@ jobs:
           Copy-Item $signed.FullName release/PaladinReplayLauncher.exe -Force
 
       # ---------- deliberate unsigned release ----------
-      # The tag must be a plain version and must match the csproj, so a manual
-      # run can never publish a binary under the wrong version number.
-      - name: Unsigned release — check the tag against the csproj version
+      - name: Unsigned release — say so in the summary
         if: env.UNSIGNED_RELEASE == 'true'
         shell: pwsh
         run: |
-          $tag = "${{ inputs.tag }}"
-          if ($tag -notmatch '^v\d+\.\d+\.\d+$') { Write-Error "Tag '$tag' is not of the form vX.Y.Z"; exit 1 }
-          $csproj = Get-Content src/Paladin.Launcher/Paladin.Launcher.csproj -Raw
-          if ($csproj -notmatch '<Version>([^<]+)</Version>') { Write-Error "No <Version> in the csproj"; exit 1 }
-          $version = $Matches[1]
-          if ("v$version" -ne $tag) { Write-Error "Tag '$tag' does not match the csproj version '$version'"; exit 1 }
           $sig = Get-AuthenticodeSignature release/PaladinReplayLauncher.exe
-          Write-Host "Publishing UNSIGNED $tag (signature status: $($sig.Status))"
-          "## Unsigned release $tag`n`nPublished deliberately without a code signature (no signing service yet). SmartScreen will warn; Smart App Control blocks it." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          Write-Host "Publishing UNSIGNED $env:RELEASE_TAG (signature status: $($sig.Status))"
+          "## Unsigned release $env:RELEASE_TAG`n`nPublished deliberately without a code signature (no signing service yet). SmartScreen will warn; Smart App Control blocks it." | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
 
       # ---------- publish ----------
       - name: Checksum
