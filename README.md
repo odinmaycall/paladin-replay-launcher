@@ -27,14 +27,20 @@ a machine with AoE4 installed** — see [Phase 4](#phase-4--is--dev-required).
 
 ## Code signing policy
 
-Free code signing provided by [SignPath.io](https://signpath.io), certificate by
-[SignPath Foundation](https://signpath.org).
+**Current state: releases are not code-signed.** The free open-source signing
+programme (SignPath Foundation) declined the project on reputation grounds on
+2026-09-03; a paid certificate is being weighed. Until one exists, Windows shows the
+launcher as an unknown publisher: SmartScreen warns (More info → Run anyway) and Smart
+App Control blocks it outright.
 
 Every published `PaladinReplayLauncher.exe` is built by this repository's own
-[release workflow](.github/workflows/release.yml) from a tagged commit, and signed by
-SignPath from that automated build. A release tag is refused unless it can be signed,
-so an unsigned binary can no longer reach the release page by accident. The publisher
-shown by Windows is **SignPath Foundation**, because the certificate is theirs.
+[release workflow](.github/workflows/release.yml) from a tagged commit, never uploaded
+by hand, and `SHA256SUMS.txt` on the release page is the hash of that build. A pushed
+release tag is refused unless it can be signed, so an unsigned binary cannot reach the
+release page by accident; an unsigned release is only ever published by a person
+choosing so in the workflow (`publish_unsigned`), and its notes say so. When a
+signing certificate exists the same workflow signs every tagged release and the
+publisher shown by Windows will be the certificate's holder.
 
 **Team roles**
 

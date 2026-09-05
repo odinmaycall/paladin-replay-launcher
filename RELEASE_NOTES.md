@@ -3,55 +3,56 @@
 Opens an Age of Empires IV replay and puts your game settings back exactly as they were
 afterwards.
 
-## Unreleased
+## New in 0.3.0
 
-- The game comes to the front on its own. When Age of Empires IV goes fullscreen a
+- **The game comes to the front on its own.** When Age of Empires IV goes fullscreen a
   few seconds after launch, whatever holds the foreground at that instant used to
   win, and the game dropped to the taskbar behind a black screen until you found it
   with Alt+Tab. The launcher now brings its window to the front when it appears and,
   for the first 30 seconds, brings it back if it gets minimised. It never fights a
   deliberate Alt+Tab. `BringGameToFront` in the config turns it off.
-- Recovery after an interrupted session restores your settings on its own, the way
+- **Recovery after an interrupted session restores your settings on its own**, the way
   every normal session ends, instead of asking. When the only differences are the
   timestamps and run counters the game rewrites on every launch, it says so and
   restores nothing, rather than asking about files it was never going to touch.
-- The console no longer prints the full path to your game folder. It shows
+- **The console no longer prints the full path to your game folder.** It shows
   `~\...\My Games\Age of Empires IV` instead, so a screenshot or a stream of the
   launcher window never carries your Windows username or the folders your
   Documents live in. The full path is still written to the log file.
-
-## New in 0.3.0 — it is code-signed
-
-This is the first signed build. Windows no longer needs to guess whether to trust it:
-
-- **SmartScreen** may still show a reputation notice on a brand-new signed file for a
-  little while; that fades as downloads accrue.
-- **Smart App Control** accepts a validly signed file, so the `0x800711C7` block that
-  stopped some people running 0.2.0 no longer applies.
-
-The publisher shown by Windows is **SignPath Foundation**, because the certificate is
-theirs — see the code signing policy below. Check a download yourself:
-
-```powershell
-Get-AuthenticodeSignature .\PaladinReplayLauncher.exe | Format-List Status, SignerCertificate
-```
-
-`Status` must read `Valid`. `SHA256SUMS.txt` on this page is the hash of the exact file
-that was signed.
-
-Also new: `--install` now says what it is about to change (one folder, one per-user
-registry key) before it does it.
+- `--install` says what it is about to change (one folder, one per-user registry
+  key) before it does it.
 
 **Windows 10/11, 64-bit. Steam only** (no Game Pass — the launch path goes through Steam).
 No .NET runtime needed; everything is in the one file.
 
+## This build is not code-signed
+
+Like 0.2.0, this release carries no code signature. The free open-source signing
+programme declined the project on reputation grounds (2026-09-03), and a paid
+certificate is being weighed; until one exists, Windows will treat the file as an
+unknown publisher:
+
+- **SmartScreen** shows *"Windows protected your PC"* the first time you run the file.
+  Choose **More info → Run anyway**.
+- **Smart App Control** (some Windows 11 machines, in evaluation or on mode) blocks
+  unsigned programs outright, with no override. Turning it off is a one-way switch in
+  Windows Security; whether that is worth it for a replay launcher is your call.
+
+Check that the file you downloaded is the one this workflow built:
+
+```powershell
+Get-FileHash .\PaladinReplayLauncher.exe -Algorithm SHA256
+```
+
+The hash must match the line in `SHA256SUMS.txt` on this page. Every release is built
+by this repository's own workflow from the tagged commit, never uploaded by hand; the
+source is public, and the privacy policy below applies unchanged.
+
 ## Code signing policy
 
-Free code signing provided by [SignPath.io](https://signpath.io), certificate by
-[SignPath Foundation](https://signpath.org).
-
-Every release is built by this repository's own release workflow from a tagged commit
-and signed from that automated build; a tag that cannot be signed is refused.
+A pushed release tag is refused unless it can be signed, so an unsigned binary cannot
+reach this page by accident; an unsigned release is only ever published by a person
+choosing so in the release workflow, and its notes say so — as these do.
 Committers, reviewers and approvers: [OdinMayCall](https://github.com/odinmaycall).
 
 Privacy: this program will not transfer any information to other networked systems
