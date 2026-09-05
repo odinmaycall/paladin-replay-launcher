@@ -49,7 +49,10 @@ public sealed class SessionRunner
             _ui.Fail("Refusing to launch: Paladin Shield cannot protect settings it cannot find.");
             return ExitCodes.EnvironmentNotFound;
         }
-        _ui.Ok($"Age of Empires IV found ({env.Aoe4DocumentsPath})");
+        // The console shows a path with no username and no personal folder names
+        // (people screenshot and stream this window); the full path is in the log.
+        _ui.Ok($"Age of Empires IV found ({PathDisplay.ForConsole(env.Aoe4DocumentsPath!)})");
+        _log.Debug($"AoE4 Documents: {env.Aoe4DocumentsPath}");
         foreach (var problem in env.Problems) _ui.Warn(problem);
 
         if (!env.CanLaunch && !DryRun)
@@ -247,7 +250,10 @@ public sealed class SessionRunner
             foreach (var problem in env.Problems) _ui.Fail(problem);
             return ExitCodes.EnvironmentNotFound;
         }
-        _ui.Ok($"Age of Empires IV found ({env.Aoe4DocumentsPath})");
+        // The console shows a path with no username and no personal folder names
+        // (people screenshot and stream this window); the full path is in the log.
+        _ui.Ok($"Age of Empires IV found ({PathDisplay.ForConsole(env.Aoe4DocumentsPath!)})");
+        _log.Debug($"AoE4 Documents: {env.Aoe4DocumentsPath}");
 
         var sessionId = SessionStore.NewSessionId(DateTime.UtcNow);
         var session = _store.Create(sessionId, DateTime.UtcNow, CurrentUserSid(), Environment.MachineName);

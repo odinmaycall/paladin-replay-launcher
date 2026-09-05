@@ -3,6 +3,13 @@
 Opens an Age of Empires IV replay and puts your game settings back exactly as they were
 afterwards.
 
+## Unreleased
+
+- The console no longer prints the full path to your game folder. It shows
+  `~\...\My Games\Age of Empires IV` instead, so a screenshot or a stream of the
+  launcher window never carries your Windows username or the folders your
+  Documents live in. The full path is still written to the log file.
+
 ## New in 0.3.0 — it is code-signed
 
 This is the first signed build. Windows no longer needs to guess whether to trust it:
