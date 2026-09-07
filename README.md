@@ -1,11 +1,7 @@
 # Paladin Replay Launcher
 
 > **Prior work and inspiration.** This launcher was inspired by the
-> [aoe4replays.gg launcher](https://github.com/aoe4replays-gg/launcher) by mikadoman,
-> which came first. Its drop-anywhere, self-registering install is the model this one
-> follows, with thanks. Replays on [Paladin](https://paladin.odinmaycall.com) are hosted by
-> aoe4replays.gg and open through their launcher first; this launcher exists for one
-> thing theirs does not do, the Paladin Shield settings backup.
+> [aoe4replays.gg launcher](https://github.com/aoe4replays-gg/launcher) by mikadoman.
 
 A small native Windows launcher that opens an Age of Empires IV replay and puts the
 user's game settings back exactly as they were afterwards.
