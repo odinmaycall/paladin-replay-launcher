@@ -18,8 +18,10 @@ namespace Paladin.Launcher.Platform;
 /// is raised again, and only within the guard window, a bounded number of times.
 ///
 /// Windows refuses SetForegroundWindow from a process that does not own the
-/// foreground. The accepted way round that is what a user does by hand: a
-/// synthetic Alt press unlocks the rule for the next call.
+/// foreground. There are three ways round that and this asks for them in order of
+/// how little they disturb the machine: plainly, then by borrowing the foreground
+/// thread's input queue, and only then with the synthetic Alt press that unlocks the
+/// rule the way a user's own Alt does.
 /// </summary>
 [SupportedOSPlatform("windows")]
 public static class GameWindow
@@ -36,6 +38,8 @@ public static class GameWindow
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hWnd, out Rect rect);
     [DllImport("user32.dll")] private static extern void keybd_event(byte virtualKey, byte scanCode, uint flags, UIntPtr extraInfo);
+    [DllImport("user32.dll")] private static extern bool AttachThreadInput(uint attach, uint attachTo, bool doAttach);
+    [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
 
     [StructLayout(LayoutKind.Sequential)]
     private struct Rect { public int Left, Top, Right, Bottom; }
@@ -43,6 +47,13 @@ public static class GameWindow
     private const int SwRestore = 9;
     private const byte VkMenu = 0x12;
     private const uint KeyEventFKeyUp = 0x0002;
+
+    /// <summary>
+    /// How many times, and how far apart, the ladder re-reads the foreground before it
+    /// climbs a rung. At most 150 ms, and only on the path that would otherwise press a key.
+    /// </summary>
+    private const int SettleChecks = 3;
+    private const int SettleDelayMs = 50;
 
     /// <summary>The largest visible top-level window owned by the process, or zero.</summary>
     public static IntPtr FindMainWindow(int pid)
@@ -61,21 +72,121 @@ public static class GameWindow
         return best;
     }
 
-    /// <summary>Restore if minimised and make foreground. True when the window ended up in front.</summary>
+    /// <summary>
+    /// Restore if minimised and make foreground. True when the window ended up in front.
+    ///
+    /// Three ways are tried, politest first, and the log names the one that worked so a
+    /// live run can be read afterwards:
+    ///
+    ///   1. SetForegroundWindow on its own. It succeeds whenever Windows has no reason to
+    ///      refuse — most often because the launcher's own console still owns the
+    ///      foreground when the game's window appears.
+    ///   2. AttachThreadInput to the thread that owns the current foreground window, ask
+    ///      again, detach in a finally. Sharing that thread's input queue makes this
+    ///      process one Windows will take the call from, and it presses nothing.
+    ///   3. The synthetic Alt press, last. It is the documented trick and it works, but it
+    ///      is a real key event: with the game's own accessibility option
+    ///      `uielementnarration = true` an Alt on the loading screen moves UI focus and the
+    ///      game reads the interface ALOUD. Cosmetic, startling, and it happened on the
+    ///      owner's own live runs, where step 1 was refused and the Alt was all that was
+    ///      left. Step 2 is the new one, and it presses nothing. Nothing here reads or
+    ///      writes that option or any other game setting — the fix is for the launcher to
+    ///      reach for the keyboard less often, never for the user to change their game.
+    ///
+    /// Between the rungs the foreground is read again for up to 150 ms
+    /// (<see cref="SettledInFront"/>), because two common cases look like a refusal from
+    /// here and are not: the window is already in front (AoE4 raises itself as it goes
+    /// fullscreen — the 0.3.0 note — which is the same second this runs), and a
+    /// cross-process SetForegroundWindow that was accepted but whose activation is still
+    /// on its way to the target thread. Climbing to a keystroke on either of those is the
+    /// exact way defect 1 came back.
+    /// </summary>
     public static bool BringToFront(IntPtr hWnd, PaladinLog log)
     {
         if (hWnd == IntPtr.Zero || !IsWindow(hWnd)) return false;
         if (IsIconic(hWnd)) ShowWindow(hWnd, SwRestore);
-        if (SetForegroundWindow(hWnd) && GetForegroundWindow() == hWnd) return true;
 
-        // Not the foreground process: press and release Alt, then ask again.
+        if (TrySetForeground(hWnd))
+        {
+            log.Info($"Window {hWnd} came to the front on the plain SetForegroundWindow (no keys pressed).");
+            return true;
+        }
+
+        if (SettledInFront(hWnd))
+        {
+            log.Info($"Window {hWnd} is in front after the plain SetForegroundWindow settled (no keys pressed).");
+            return true;
+        }
+
+        if (TryAttachedSetForeground(hWnd, log))
+        {
+            log.Info($"Window {hWnd} came to the front after attaching to the foreground thread's input (no keys pressed).");
+            return true;
+        }
+
+        if (SettledInFront(hWnd))
+        {
+            log.Info($"Window {hWnd} is in front after the attached SetForegroundWindow settled (no keys pressed).");
+            return true;
+        }
+
+        // Last resort: press and release Alt, then ask again.
+        log.Info($"Window {hWnd} was not in front after either quiet raise or the checks that followed them; falling back to the synthetic Alt press.");
         keybd_event(VkMenu, 0, 0, UIntPtr.Zero);
         keybd_event(VkMenu, 0, KeyEventFKeyUp, UIntPtr.Zero);
         if (IsIconic(hWnd)) ShowWindow(hWnd, SwRestore);
         var accepted = SetForegroundWindow(hWnd);
         var inFront = accepted && GetForegroundWindow() == hWnd;
-        if (!inFront) log.Warn($"SetForegroundWindow was refused for window {hWnd} (accepted={accepted}).");
+        if (inFront) log.Info($"Window {hWnd} came to the front after the synthetic Alt press.");
+        else log.Warn($"SetForegroundWindow was refused for window {hWnd} by all three attempts (last accepted={accepted}).");
         return inFront;
+    }
+
+    /// <summary>Ask, and believe the answer only if the window really is in front.</summary>
+    private static bool TrySetForeground(IntPtr hWnd) => SetForegroundWindow(hWnd) && GetForegroundWindow() == hWnd;
+
+    /// <summary>
+    /// Is the window in front, now or within the next <see cref="SettleChecks"/> ×
+    /// <see cref="SettleDelayMs"/> ms? Asked between the rungs, so that neither a window
+    /// that was already there nor an activation still in flight is mistaken for a refusal
+    /// and answered with a keystroke.
+    /// </summary>
+    private static bool SettledInFront(IntPtr hWnd)
+    {
+        for (var i = 0; i < SettleChecks; i++)
+        {
+            if (GetForegroundWindow() == hWnd) return true;
+            Thread.Sleep(SettleDelayMs);
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Step 2: attach this thread's input to the thread that owns whatever is in front, so
+    /// that for the length of the call this process counts as part of the foreground and
+    /// SetForegroundWindow is allowed. The detach is in a finally — leaving two input
+    /// queues joined would tie this console's keyboard state to another program's.
+    /// </summary>
+    private static bool TryAttachedSetForeground(IntPtr hWnd, PaladinLog log)
+    {
+        var foreground = GetForegroundWindow();
+        if (foreground == IntPtr.Zero || foreground == hWnd) return false;
+
+        var foregroundThread = GetWindowThreadProcessId(foreground, out _);
+        var ourThread = GetCurrentThreadId();
+        if (foregroundThread == 0 || foregroundThread == ourThread) return false;
+
+        var attached = AttachThreadInput(ourThread, foregroundThread, true);
+        if (!attached) log.Debug($"AttachThreadInput to thread {foregroundThread} was refused; asking anyway.");
+        try
+        {
+            if (IsIconic(hWnd)) ShowWindow(hWnd, SwRestore);
+            return TrySetForeground(hWnd);
+        }
+        finally
+        {
+            if (attached) AttachThreadInput(ourThread, foregroundThread, false);
+        }
     }
 
     /// <summary>

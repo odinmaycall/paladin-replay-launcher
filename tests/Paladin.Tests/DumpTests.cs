@@ -575,6 +575,10 @@ public static class DumpTests
             Equal("USER [", DumpEvidence.PersonalForm("USER [someone]"));
             Equal("COMPUTER [", DumpEvidence.PersonalForm("COMPUTER [x]"));
             Equal("WORKING-DIR [", DumpEvidence.PersonalForm(@"WORKING-DIR [C:\x]"));
+            // The locale never reaches the guard — the selectors take three exact forms and
+            // this is not one of them — but the class comment, the README and the release
+            // notes all say a LOCALE line would be refused, so it is refused.
+            Equal("LOCALE [", DumpEvidence.PersonalForm("LOCALE [en-GB]"));
             Equal("modulefilename", DumpEvidence.PersonalForm("(I) [1] [2]: Version.cpp - translation info queried modulefilename x"));
             Equal("GAME -- Current Steam name is [", DumpEvidence.PersonalForm(Line("Current Steam name")), "the session form, after the clock");
             Equal("GAME -- Current Steam name is [", DumpEvidence.PersonalForm("(I) [04:53:20.717] [000030660]: GAME -- Current Steam name is [someone]"), "the top-level form");

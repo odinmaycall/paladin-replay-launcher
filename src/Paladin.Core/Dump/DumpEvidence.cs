@@ -52,13 +52,15 @@ public sealed class DumpEvidence
 
     /// <summary>
     /// Forms that must never leave the machine, checked on every line kept as defence in
-    /// depth: the design's four (§5.2 step 2: bare line starts and the install path's word)
-    /// and the two the real logs carry beyond them — the Steam account name (top-level line
-    /// 17, session line 3; a message start after either clock prefix) and any Windows user
-    /// path ("Using [C:\Users\...]", top-level 28-29, session 14-15). The Worker's list
-    /// wants the same two.
+    /// depth: the design's four (§5.2 step 2: three bare line starts and the install path's
+    /// word), the LOCALE line the top-level log carries beside them — which this class, the
+    /// README and the release notes all promise is refused, so it is refused — and the two
+    /// the real logs carry beyond all of those: the Steam account name (top-level line 17,
+    /// session line 3; a message start after either clock prefix) and any Windows user path
+    /// ("Using [C:\Users\...]", top-level 28-29, session 14-15). The Worker's list wants the
+    /// same two.
     /// </summary>
-    private static readonly string[] PersonalStarts = { "USER [", "COMPUTER [", "WORKING-DIR [" };
+    private static readonly string[] PersonalStarts = { "USER [", "COMPUTER [", "WORKING-DIR [", "LOCALE [" };
     private static readonly string[] PersonalMessageStarts = { "GAME -- Current Steam name is [" };
     private static readonly string[] PersonalContains = { "modulefilename", @":\Users\" };
 

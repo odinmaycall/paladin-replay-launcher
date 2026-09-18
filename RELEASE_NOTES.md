@@ -1,28 +1,27 @@
-# Paladin Replay Launcher 0.3.0
+# Paladin Replay Launcher 0.4.0
 
 Opens an Age of Empires IV replay and puts your game settings back exactly as they were
 afterwards.
 
-<!-- DRAFT — not released. The version in the csproj is still 0.3.0; this section is
-     written as the release will read and is edited until the 0.4.0 build is published
-     (§717 pass E). Nothing below it has changed. -->
-
-## New in 0.4.0 (draft)
+## New in 0.4.0
 
 - **Dump this game.** A Paladin match page whose map panel has no World layer now offers
   a second button beside WATCH REPLAY. It starts that game's replay on your PC, reads the
   map's objects out of the game's own developer console and sends those rows to Paladin,
   which checks them against its own data for that game and draws the World layer from
-  then on. About two minutes, hands off.
-- **What that sends, and when.** Only on your click, and only the map's printed rows:
-  every object's blueprint name, position, entity and squad id and owner; the two
-  players' names and civs as the game prints them; the game build; the map's biome,
-  layout, size, seed and player count; the `RUN-OPTIONS` line, which names only the
-  replay; the launch's local date and minute; and the launcher's version, chord and step
-  timings. Never your Windows user or computer name, the install path, your locale, your
-  Steam account, your settings, the replay itself or either of the game's log files. The
-  exact text that left the machine is kept in the session folder so you can read it.
-  `--dump <id> --no-upload` does the whole run and sends nothing at all.
+  then on. About two minutes, hands off: you click it, and the next thing you do is
+  reload the page.
+- **What that sends, and when.** Only on your click, and only the map's printed rows plus
+  eight lines of heading: every object's blueprint name, position, entity and squad id
+  and owner; the two players' names and civs as the game prints them; the game build; the
+  map's biome, layout, size, seed and player count; the `RUN-OPTIONS` line, which names
+  only the replay; the launch's local date and minute; and the launcher's version, the
+  keyboard chord and input method it used, and its step timings. Never your Windows user
+  or computer name, the working directory, the install path, your locale, your Steam
+  account, your settings, the replay itself or either of the game's log files — a line of
+  any of those forms is refused by the builder even if one were ever picked up. The exact
+  text that left the machine is kept in the session folder so you can read every byte of
+  it. `--dump <id> --no-upload` does the whole run and sends nothing at all.
 - **It tells you before it starts.** The console lists what will happen and what will be
   sent, then counts five seconds down: Enter starts it now, Ctrl+C stops it. `--yes`
   skips the countdown for a scripted run.
@@ -45,6 +44,26 @@ afterwards.
 - **If Paladin cannot be reached**, the rows are kept and
   `PaladinReplayLauncher.exe --dump-upload <session-id>` sends them later, with no game
   and no second two minutes.
+- **Bringing the game to the front no longer starts with a keypress.** It used to mean
+  pressing Alt, which is the documented way to get Windows to allow it. If you have the
+  game's own **UI element narration** accessibility option switched on, that Alt landed on
+  the loading screen and the game started reading its interface out loud. The launcher now
+  asks Windows politely first, then checks whether the game has come forward on its own,
+  then asks again while sharing the foreground window's input — and presses Alt only if
+  all of that is refused. Your game settings are not touched, then or ever; the fix is
+  that the launcher reaches for the keyboard less.
+- **Ctrl+C in the first seconds now waits for the game rather than leaving it.** Stopping
+  a dump in the moment between "Launching Age of Empires IV" and the game actually
+  appearing used to restore your settings and exit while the game was still on its way, so
+  it opened a few seconds later with nothing behind it. For 25 seconds after the launch
+  the launcher now waits for that game and closes it; if it still has not appeared it
+  tells you in one line instead of leaving you to find out. Stopping later, once it is
+  clear the game is not coming, exits straight away as before, and stopping a plain replay
+  is unchanged: that game is yours and it stays.
+
+**New flags:** `--dump <game-id>`, `--dump-upload <session-id>`, `--no-upload`,
+`--squads`, `--force`, `--watch`, `--yes`. `--dry-run` works with a dump too and launches
+nothing.
 
 ## New in 0.3.0
 
@@ -70,7 +89,7 @@ No .NET runtime needed; everything is in the one file.
 
 ## This build is not code-signed
 
-Like 0.2.0, this release carries no code signature. The free open-source signing
+Like 0.2.0 and 0.3.0, this release carries no code signature. The free open-source signing
 programme declined the project on reputation grounds (2026-09-03), and a paid
 certificate is being weighed; until one exists, Windows will treat the file as an
 unknown publisher:
@@ -100,11 +119,11 @@ Committers, reviewers and approvers: [OdinMayCall](https://github.com/odinmaycal
 
 Privacy: this program will not transfer any information to other networked systems
 unless specifically requested by the user or the person installing or operating it. Its
-only network request is downloading the replay named in the link you clicked. From 0.4.0,
-clicking "Dump this game" also asks paladin.odinmaycall.com whether that game already has
-a map and, if not, uploads that game's printed world rows (about 150-400 KB of text,
-listed in the console before sending) to it; nothing else, and never without that click.
-No telemetry. Full policy: [README — Code signing policy](README.md#code-signing-policy).
+only network request is downloading the replay named in the link you clicked. Clicking
+"Dump this game" also asks paladin.odinmaycall.com whether that game already has a map
+and, if not, uploads that game's printed world rows (about 150-400 KB of text, listed in
+the console before sending) to it; nothing else, and never without that click. No
+telemetry. Full policy: [README — Code signing policy](README.md#code-signing-policy).
 
 ## Install
 
@@ -212,6 +231,9 @@ Backups, logs and session records live in `%LOCALAPPDATA%\PaladinReplayLauncher\
 | `--repair` | re-register `paladin://` to this exe |
 | `--recover` | finish an interrupted session's restore |
 | `--observe` | snapshot, wait while *you* launch AoE4 normally, report what changed |
+| `--dump <game-id>` | dump that game's map and send it to Paladin |
+| `--dump <game-id> --no-upload` | the same run, but the rows stay on this PC |
+| `--dump-upload <session-id>` | send rows a previous run kept, with no game |
 | `--dry-run` | do everything except launch the game |
 | `--no-dev` | launch without the `-dev` flag |
 | `--uninstall` | remove the link handler |
@@ -228,6 +250,13 @@ Backups, logs and session records live in `%LOCALAPPDATA%\PaladinReplayLauncher\
 - The interface is a console window. A proper window comes later.
 - Does not interfere with the AoE4Replays.gg launcher; they use different link types and
   can both be installed.
+- **A dump needs the game signed in.** The console's script functions are unavailable
+  otherwise, and the run stops and says so rather than half-finishing.
+- **Tournament games on custom maps cannot be dumped** on a PC that does not have that
+  map's mod: the replay never reaches the map, the run gives up after three minutes and
+  nothing is sent.
+- A dump types into the game's console with an English keyboard's layout in mind. If the
+  console does not open, the run says which key combinations it tried and stops.
 
 ## Uninstall
 

@@ -129,9 +129,14 @@ public sealed class SessionRunner
         string? placedReplay = null;
 
         // Held outside the try so the cancellation handler below can end the game it
-        // started before the Shield restores anything (CancelPolicy).
+        // started before the Shield restores anything (CancelPolicy). The pid set and the
+        // moment Steam was asked are there for the same reason: a Ctrl+C in the few
+        // seconds before the game appears still has to be able to find it and wait for it —
+        // and a Ctrl+C long afterwards has to know that those seconds are over.
         GameProcessMonitor? monitor = null;
         GameProcessMonitor.GameProcessInfo? game = null;
+        var preexisting = new HashSet<int>();
+        DateTime? launchedAtUtc = null;
 
         try
         {
@@ -256,7 +261,7 @@ public sealed class SessionRunner
             }
 
             monitor = new GameProcessMonitor(_config.GameProcessNames, env.Aoe4GameExePath, _log);
-            var preexisting = monitor.Snapshot().Select(p => p.Pid).ToHashSet();
+            preexisting = monitor.Snapshot().Select(p => p.Pid).ToHashSet();
             if (preexisting.Count > 0)
                 _ui.Warn($"Age of Empires IV already appears to be running ({preexisting.Count} process(es)). Close it first for a clean session.");
 
@@ -267,6 +272,9 @@ public sealed class SessionRunner
                 await FinishAsync(session, env, snapshots, restorer, placedReplay, ct, gameRan: false);
                 return ExitCodes.LaunchFailed;
             }
+            // From here a game is on its way whether or not this run is still interested,
+            // and the clock a cancel measures its grace against starts now.
+            launchedAtUtc = DateTime.UtcNow;
 
             // ---- 7. Monitor -------------------------------------------------------
             game = await monitor.WaitForStartAsync(
@@ -347,13 +355,46 @@ public sealed class SessionRunner
             // put back. A -dev game left running rewrites local.ini (consolehistory
             // included) when it is finally closed, which would undo the restore the
             // console is about to report. A watch's CancelPolicy leaves the game alone.
-            if (CancelPolicy.Action == ExitAction.EndProcess && monitor is not null && game is not null)
+            //
+            // The one that has to be waited for is a Ctrl+C in the seconds between the
+            // Steam launch command and the process appearing: looking once finds nothing,
+            // and the game then starts behind a finished run (InterruptedLaunchPlan).
+            // Those seconds are counted from the launch, so a cancel minutes into a launch
+            // Steam never fulfilled waits for nothing and exits as it always did.
+            var plan = InterruptedLaunchPlan.For(CancelPolicy, launchedAtUtc, game is not null, DateTime.UtcNow);
+            var neverAppeared = false;
+
+            if (plan.Action == InterruptedLaunchAction.WaitForItThenEnd && monitor is not null)
             {
-                session.Notes.Add("Interrupted while the dump was running; the game was ended before the restore.");
-                await EndGameAsync(monitor, game, CancelPolicy.Grace, CancellationToken.None);
+                _ui.Pending(DumpConsoleText.WaitingForTheLaunchedGame((int)Math.Ceiling(plan.AppearGrace.TotalSeconds)));
+                _log.Warn($"Cancelled after the launch command but before the game appeared; giving it {plan.AppearGrace.TotalSeconds:0} s.");
+                // CancellationToken.None: ct is already cancelled, and this wait is the
+                // handling of that cancellation, not work that ignores it.
+                game = await monitor.WaitForStartAsync(preexisting, plan.AppearGrace, CancellationToken.None);
+                neverAppeared = game is null;
+            }
+
+            if (plan.Action != InterruptedLaunchAction.LeaveItAlone && monitor is not null && game is not null)
+            {
+                session.Notes.Add("Interrupted after the launch; the game was ended before the restore.");
+                await EndGameAsync(monitor, game, plan.CloseGrace, CancellationToken.None);
+            }
+            else if (neverAppeared)
+            {
+                session.Notes.Add($"Interrupted after the launch; the game had not appeared within {plan.AppearGrace.TotalSeconds:0} s.");
+                _log.Warn("The launched game never appeared within the grace; the settings are restored and the user is told to close it if it opens.");
             }
 
             await FinishAsync(session, env, snapshots, restorer, placedReplay, CancellationToken.None, gameRan: true);
+
+            // Last line on purpose: it promises the settings are back, and they are only
+            // back once FinishAsync above has said so — which is also why it is the
+            // outcome, not the intention, that picks the wording. After "Finished WITH
+            // ERRORS" the honest line is the one that points at the retained backup.
+            if (neverAppeared)
+                _ui.Warn(session.Outcome == SessionOutcome.RestoreFailed
+                    ? DumpConsoleText.GameNeverAppearedRestoreFailed
+                    : DumpConsoleText.GameNeverAppeared);
             return ExitCodes.Cancelled;
         }
         catch (Exception ex)

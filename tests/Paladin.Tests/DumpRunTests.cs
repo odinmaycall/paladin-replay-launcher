@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using Paladin.Core.Config;
 using Paladin.Core.Dump;
 using Paladin.Core.Protocol;
 using static Paladin.Tests.TestHarness;
@@ -948,5 +949,186 @@ public static class DumpRunTests
                 "The replay arrived as 'AgeIV_Replay_246737201' but the link named game 249960029. Nothing was launched.",
                 DumpChecks.WrongReplayMessage("AgeIV_Replay_246737201", 249960029));
         });
+
+        // ---------------------------------------------------------------------------
+
+        Suite("Ctrl+C after the launch command (the orphan rule)");
+
+        // Session 20260918-161828-81e679: the Steam launch went out at 16:18:29.044 and
+        // the cancel landed at 16:18:29.418 — 374 ms later, four-odd seconds before the
+        // game process existed. Looking once found nothing, so the run restored, deleted
+        // the prepared replay and exited, and the game started behind it with nothing
+        // watching it and no replay to play.
+        // The moment Steam was asked, and the cancel a stated time after it. Every case
+        // below is written as "the launch went out at T, the Ctrl+C landed at T + x".
+        var launchedAt = new DateTime(2026, 9, 18, 16, 18, 29, DateTimeKind.Utc);
+        DateTime CancelledAfter(TimeSpan gap) => launchedAt + gap;
+
+        Test("a dump cancelled before the game appears waits for it rather than looking once", () =>
+        {
+            var dump = ExitPolicy.EndProcess(TimeSpan.FromSeconds(15));
+            var plan = InterruptedLaunchPlan.For(
+                dump, launchedAt, gameSeen: false, CancelledAfter(TimeSpan.FromMilliseconds(374)));
+
+            Equal(InterruptedLaunchAction.WaitForItThenEnd, plan.Action);
+            Equal(
+                TimeSpan.FromSeconds(InterruptedLaunchPlan.AppearGraceSeconds) - TimeSpan.FromMilliseconds(374),
+                plan.AppearGrace,
+                "what is left of the grace, counted from the launch and not from the cancel");
+            Equal(TimeSpan.FromSeconds(15), plan.CloseGrace, "and it is ended on the dump's own close grace");
+        });
+
+        // The grace exists for the seconds while Steam is still producing the game. A user
+        // who has watched "Waiting for Age of Empires IV to start ..." for minutes and then
+        // given up is telling the launcher the game is not coming: waiting 25 s more, and
+        // then saying "if it opens, close it", would be latency and a falsehood.
+        Test("a dump cancelled long after the launch waits for nothing, as it did before this rule", () =>
+        {
+            var plan = InterruptedLaunchPlan.For(
+                ExitPolicy.EndProcess(TimeSpan.FromSeconds(15)),
+                launchedAt, gameSeen: false, CancelledAfter(TimeSpan.FromMinutes(3)));
+
+            Equal(InterruptedLaunchAction.LeaveItAlone, plan.Action);
+            Equal(TimeSpan.Zero, plan.AppearGrace, "nothing is waited for and nothing is warned about");
+        });
+
+        Test("the grace runs out exactly at its own length", () =>
+        {
+            var full = TimeSpan.FromSeconds(InterruptedLaunchPlan.AppearGraceSeconds);
+            var dump = ExitPolicy.EndProcess(TimeSpan.FromSeconds(15));
+
+            var justInside = InterruptedLaunchPlan.For(
+                dump, launchedAt, gameSeen: false, CancelledAfter(full - TimeSpan.FromSeconds(1)));
+            Equal(InterruptedLaunchAction.WaitForItThenEnd, justInside.Action);
+            Equal(TimeSpan.FromSeconds(1), justInside.AppearGrace);
+
+            var atTheEdge = InterruptedLaunchPlan.For(dump, launchedAt, gameSeen: false, CancelledAfter(full));
+            Equal(InterruptedLaunchAction.LeaveItAlone, atTheEdge.Action, "zero left is nothing to wait for");
+            Equal(TimeSpan.Zero, atTheEdge.AppearGrace);
+        });
+
+        Test("the appear grace is its own short one, not the wait a launch nobody cancelled gets", () =>
+        {
+            True(InterruptedLaunchPlan.AppearGraceSeconds >= 20, "long enough for a cold Steam (~5 s measured)");
+            True(InterruptedLaunchPlan.AppearGraceSeconds <= 30, "short enough that a cancelled run still feels cancelled");
+            True(
+                InterruptedLaunchPlan.AppearGraceSeconds < new LauncherConfig().GameStartTimeoutSeconds,
+                "and far under GameStartTimeoutSeconds (300 s), which is for a launch that means to succeed");
+        });
+
+        Test("a dump cancelled with the game already up ends it straight away, as it always did", () =>
+        {
+            foreach (var gap in new[] { TimeSpan.FromSeconds(1), TimeSpan.FromMinutes(20) })
+            {
+                var plan = InterruptedLaunchPlan.For(
+                    ExitPolicy.EndProcess(TimeSpan.FromSeconds(15)), launchedAt, gameSeen: true, CancelledAfter(gap));
+
+                Equal(InterruptedLaunchAction.EndTheGame, plan.Action, $"gap={gap}");
+                Equal(TimeSpan.Zero, plan.AppearGrace, "there is nothing left to wait for");
+                Equal(TimeSpan.FromSeconds(15), plan.CloseGrace);
+            }
+        });
+
+        Test("a watch is left exactly as it is: the user wants that game", () =>
+        {
+            foreach (var seen in new[] { true, false })
+            {
+                var plan = InterruptedLaunchPlan.For(
+                    ExitPolicy.WaitForUser, launchedAt, gameSeen: seen, CancelledAfter(TimeSpan.FromSeconds(1)));
+                Equal(InterruptedLaunchAction.LeaveItAlone, plan.Action, $"gameSeen={seen}");
+                Equal(TimeSpan.Zero, plan.AppearGrace, $"gameSeen={seen}");
+            }
+        });
+
+        Test("nothing is waited for when Steam was never asked", () =>
+        {
+            var plan = InterruptedLaunchPlan.For(
+                ExitPolicy.EndProcess(TimeSpan.FromSeconds(15)),
+                launchedAtUtc: null, gameSeen: false, CancelledAfter(TimeSpan.FromSeconds(1)));
+
+            Equal(InterruptedLaunchAction.LeaveItAlone, plan.Action);
+            Equal(TimeSpan.Zero, plan.AppearGrace, "a cancel during the download or the countdown ends at once");
+        });
+
+        Test("the line printed when it never appears promises only what is true by then", () =>
+        {
+            Equal(
+                "Age of Empires IV had not started yet; if it opens, close it — your settings are already back.",
+                DumpConsoleText.GameNeverAppeared);
+
+            // The same moment after a restore that failed. The console has just printed
+            // "Finished WITH ERRORS" and the kept backup's path above this line, so this
+            // one may not say the settings are back — SessionRunner picks by the outcome.
+            Equal(
+                "Age of Empires IV had not started yet; if it opens, close it — your settings could not all be put back; see the backup path above.",
+                DumpConsoleText.GameNeverAppearedRestoreFailed);
+            False(
+                DumpConsoleText.GameNeverAppearedRestoreFailed.Contains("already back", StringComparison.Ordinal),
+                "the promise the other line makes is exactly what this one must not repeat");
+            True(
+                DumpConsoleText.GameNeverAppearedRestoreFailed.StartsWith(
+                    "Age of Empires IV had not started yet; if it opens, close it", StringComparison.Ordinal),
+                "and the part that is still true is said the same way");
+
+            True(
+                DumpConsoleText.WaitingForTheLaunchedGame(InterruptedLaunchPlan.AppearGraceSeconds)
+                    .Contains($"{InterruptedLaunchPlan.AppearGraceSeconds} s", StringComparison.Ordinal),
+                "the wait states its own length rather than looking hung");
+        });
+
+        // ---------------------------------------------------------------------------
+
+        Suite("The shipped version");
+
+        Test("the csproj version, the file version and the release notes name one release", () =>
+        {
+            var root = RepoRoot();
+            // A published single-file test exe has no repository under it. This is a
+            // repo-hygiene check, so there it simply does not apply.
+            if (root is null) return;
+
+            var csproj = File.ReadAllText(Path.Combine(root, "src", "Paladin.Launcher", "Paladin.Launcher.csproj"));
+            var version = Between(csproj, "<Version>", "</Version>");
+            NotNull(version, "the csproj has a <Version>");
+
+            Equal($"{version}.0", Between(csproj, "<AssemblyVersion>", "</AssemblyVersion>"));
+            Equal($"{version}.0", Between(csproj, "<FileVersion>", "</FileVersion>"));
+
+            // The release workflow tags v<Version> from this csproj and publishes
+            // RELEASE_NOTES.md verbatim as the release body, so a disagreement between the
+            // two is a release page whose title and text name different versions.
+            var notes = File.ReadAllText(Path.Combine(root, "RELEASE_NOTES.md")).Replace("\r\n", "\n");
+            Equal($"# Paladin Replay Launcher {version}", notes.Split('\n')[0]);
+            True(notes.Contains($"\n## New in {version}\n", StringComparison.Ordinal),
+                $"the notes carry a finished '## New in {version}' section");
+            False(notes.Contains($"## New in {version} (draft)", StringComparison.Ordinal),
+                "and it is no longer marked a draft");
+        });
+    }
+
+    /// <summary>
+    /// The repository this test binary was built in, found by walking up from the binary
+    /// rather than from the working directory: CI runs the suite from the repo root and a
+    /// person may run it from anywhere. Null when there is no repository above it.
+    /// </summary>
+    private static string? RepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            if (File.Exists(Path.Combine(dir.FullName, "PaladinReplayLauncher.slnx"))) return dir.FullName;
+            dir = dir.Parent;
+        }
+        return null;
+    }
+
+    /// <summary>The text between two markers, or null if either is missing.</summary>
+    private static string? Between(string text, string open, string close)
+    {
+        var start = text.IndexOf(open, StringComparison.Ordinal);
+        if (start < 0) return null;
+        start += open.Length;
+        var end = text.IndexOf(close, start, StringComparison.Ordinal);
+        return end < 0 ? null : text[start..end];
     }
 }

@@ -104,6 +104,30 @@ public static class DumpConsoleText
     public static string EndedTheGame(int graceSeconds) =>
         $"The game did not close by itself within {graceSeconds} s; ending it (a replay has nothing to save).";
 
+    /// <summary>
+    /// Ctrl+C in the few seconds between the Steam launch command and the game appearing.
+    /// The run has to say why it is not exiting yet, or the wait looks like a hang.
+    /// </summary>
+    public static string WaitingForTheLaunchedGame(int graceSeconds) =>
+        $"Steam was already asked to start the game; waiting up to {graceSeconds} s for it to appear so it can be closed ...";
+
+    /// <summary>
+    /// The grace ran out and no game appeared. One line, and it is the honest one: the
+    /// settings are back by the time this is printed, and the only thing left that could
+    /// surprise the user is a game window opening a moment later with nothing behind it.
+    /// </summary>
+    public const string GameNeverAppeared =
+        "Age of Empires IV had not started yet; if it opens, close it — your settings are already back.";
+
+    /// <summary>
+    /// The same moment, after a restore that did not finish. The console has just printed
+    /// "Finished WITH ERRORS" and the kept backup's path, so this one may not repeat the
+    /// promise the other makes: it says the one thing that is still true and points at
+    /// what is above it.
+    /// </summary>
+    public const string GameNeverAppearedRestoreFailed =
+        "Age of Empires IV had not started yet; if it opens, close it — your settings could not all be put back; see the backup path above.";
+
     /// <summary>The clipboard note of D5: the run puts a line on the clipboard and puts the user's text back.</summary>
     public const string ClipboardRestored = "Your clipboard was used for the console lines and has been put back.";
 

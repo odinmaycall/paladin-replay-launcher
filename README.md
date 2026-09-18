@@ -82,12 +82,25 @@ rights, and `--uninstall` removes the handler again. Nothing else is installed.
 
 **Verifying a download**
 
+Releases are unsigned today, so the check that means something is the hash:
+
+```powershell
+Get-FileHash .\PaladinReplayLauncher.exe -Algorithm SHA256
+```
+
+It must match the line in `SHA256SUMS.txt` on the release page, which the release
+workflow wrote from the file it had just built. Windows will warn: SmartScreen shows
+*"Windows protected your PC"* the first time the file runs (More info → Run anyway), and
+Smart App Control, where it is on, blocks it outright with no override.
+
+Once a signing certificate exists the signature becomes the better check:
+
 ```powershell
 Get-AuthenticodeSignature .\PaladinReplayLauncher.exe | Format-List Status, SignerCertificate
 ```
 
-`Status` must read `Valid` and the signer `SignPath Foundation`. The release page also
-carries the SHA-256 of the exact file that was signed.
+`Status` would then read `Valid`. On an unsigned release it reads `NotSigned`, and that
+is expected rather than a sign of tampering.
 
 ---
 
@@ -130,11 +143,12 @@ Windows dependencies and would port more or less directly.
     Platform/ProtocolRegistrar
     Platform/KeyboardInjector SendInput and the clipboard, with the focus rules
     Platform/GameLogWatcher   finds and tails the game's own session log
+    Platform/GameWindow       finds the game's window and raises it, politest way first
     SessionRunner             the ordered pipeline (+ the while-running hook)
     DumpRunner                "Dump this game": pre-flight, launch, dump, upload
     RecoveryRunner            crash recovery
     Program / CommandLineOptions / ShieldUi
-  tests/Paladin.Tests/        net10.0 — 206 tests, zero packages
+  tests/Paladin.Tests/        net10.0 — 220 tests, zero packages
   web/paladin-test.html       local link-test page
 ```
 
@@ -282,7 +296,23 @@ The game is closed by the launcher as soon as the rows are safe: a replay has no
 save, and waiting for the game to unload added over a minute to every run. Ctrl+C stops
 the run at any point, and closes the game the same way before the settings are checked
 and put back: a `-dev` game left running writes its own settings file back afterwards,
-over the restore that was just reported.
+over the restore that was just reported. A Ctrl+C in the first 25 seconds after the launch
+command waits for the game that may still be on its way and closes that too, and says so
+in one line if it never turns up — the alternative, seen live, was a game that opened by
+itself after the run had finished, with nothing watching it and no replay left to play.
+That grace runs from the launch, so a Ctrl+C minutes later, when the game is plainly not
+coming, exits at once as it always did. Stopping a plain `--replay` watch is unchanged:
+that game is the user's, and it is left alone.
+
+The game's window is brought to the front before anything is typed, and it is asked for
+politely: `SetForegroundWindow` on its own; a short look (at most 150 ms) at whether the
+window is in front, because the game raises itself as it goes fullscreen and an accepted
+call can land a moment after it returns; `SetForegroundWindow` again while attached to the
+foreground window's input thread, with the same look after it; and only then the synthetic
+Alt press Windows documents for the purpose. The order matters because Alt is a real
+keystroke: a user with the game's own **UI element narration** accessibility option on
+hears the game read its interface aloud when that Alt lands on the loading screen. The log
+names which step worked. None of it reads or writes a game setting.
 
 **What is sent, and only when a dump succeeds:** the map's printed objects (blueprint
 name, position, entity and squad id, owner), the two players' display names and civs as
