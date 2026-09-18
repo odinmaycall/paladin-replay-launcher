@@ -48,8 +48,11 @@ permissions:
 env:
   SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
   IS_TAG: ${{ startsWith(github.ref, 'refs/tags/') }}
-  # The boolean input arrives as a boolean or, on some paths, the string 'true'; accept both.
-  UNSIGNED_RELEASE: ${{ github.event_name == 'workflow_dispatch' && (inputs.publish_unsigned == true || inputs.publish_unsigned == 'true') }}
+  # 18 Sept 2026: runs 6 and 7 both said "publish_unsigned not ticked" with the box ticked. The `inputs`
+  # context is empty in a workflow-level env for a workflow_dispatch run, so both halves of the old test
+  # compared against nothing. `github.event.inputs` is part of the github context, is always present here,
+  # and carries the checkbox as the string 'true'. The `inputs` half stays for a future workflow_call.
+  UNSIGNED_RELEASE: ${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.publish_unsigned == 'true' || inputs.publish_unsigned == true) }}
 
 jobs:
   build:
