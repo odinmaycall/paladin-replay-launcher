@@ -67,6 +67,12 @@ machine, to start the game. It sends no telemetry, no crash reports and no usage
 and it never reads or transmits the settings it protects — backups stay under
 `%LOCALAPPDATA%\PaladinReplayLauncher\` on your own disk.
 
+When you click **Dump this game** it also asks paladin.odinmaycall.com whether that game
+already has a map and, if not, uploads that game's printed world rows (about 150-400 KB
+of text, listed in the console before sending) to it. Nothing else, and never without
+that click. `--no-upload` keeps everything on this PC, and
+[Dump this game](#dump-this-game) below lists exactly what those rows contain.
+
 **What it changes on your system, and how to undo it**
 
 `--install` copies the program to `%LOCALAPPDATA%\Programs\PaladinReplayLauncher\` and
@@ -111,8 +117,9 @@ Windows dependencies and would port more or less directly.
     Logging/PaladinLog        line logger, console + file
     Model/                    SessionRecord, FileSnapshot, FileChange, RestoreResult
     Protocol/PaladinUri       paladin:// parsing and link building
-    Dump/                     "Dump this game" (in development): the console Lua,
-                              log classification, evidence, envelope, uploader
+    Dump/                     "Dump this game": the console Lua (DumpLadder), the log
+                              classifier, the console script (ConsoleDriver), the run
+                              (DumpSession), the log files, evidence, envelope, uploader
     Replay/                   IReplayProvider + Local, DirectUrl, registry, validator
     Shield/                   PathGlob, ProtectionPolicy, Snapshot, ChangeDetector,
                               RestoreService, SessionStore, RecoveryTriage
@@ -121,10 +128,13 @@ Windows dependencies and would port more or less directly.
     Platform/Aoe4Locator      Steam, game and Documents discovery
     Platform/GameProcessMonitor
     Platform/ProtocolRegistrar
-    SessionRunner             the ordered pipeline
+    Platform/KeyboardInjector SendInput and the clipboard, with the focus rules
+    Platform/GameLogWatcher   finds and tails the game's own session log
+    SessionRunner             the ordered pipeline (+ the while-running hook)
+    DumpRunner                "Dump this game": pre-flight, launch, dump, upload
     RecoveryRunner            crash recovery
     Program / CommandLineOptions / ShieldUi
-  tests/Paladin.Tests/        net10.0 — 168 tests, zero packages
+  tests/Paladin.Tests/        net10.0 — 206 tests, zero packages
   web/paladin-test.html       local link-test page
 ```
 
@@ -233,14 +243,74 @@ Install it (per-user, no admin) — do this once:
 publish\PaladinReplayLauncher.exe --install
 ```
 
-### Dump (in development)
+### Dump this game
 
-`--dump <game-id> [--no-upload] [--squads]`, `--dump-upload <folder>` and the
-`paladin://dump?game=<id>&url=...` link are parsed by this build and refused with
-"dump: not yet implemented (pass B)". They will start a replay, read the map's objects
-from the game's own developer console and send those rows to Paladin so the match page
-gets its World layer. The no-game core (`src/Paladin.Core/Dump`) is in and tested; the
-part that drives the game is not, and the network policy above is unchanged until it is.
+A Paladin match page whose map panel has no World layer offers **Dump this game**. It
+opens `paladin://dump?game=<id>&url=...`, and this launcher then does what it does for a
+replay — downloads it, snapshots your settings, starts the game with `-dev -replay` —
+and, while the replay plays, opens the game's own developer console and types eleven
+lines of the game's own script language that print every object on the map. Those
+printed rows go to Paladin, which checks them against its own data for that game and
+serves the map from then on.
+
+```bash
+PaladinReplayLauncher.exe --dump 249960029                 # download, dump, send
+PaladinReplayLauncher.exe --dump 249960029 --no-upload     # dump, keep the rows here
+PaladinReplayLauncher.exe --dump 249960029 --replay "C:\replays\AgeIV_Replay_249960029"
+PaladinReplayLauncher.exe --dump-upload 20260918-045319-abc123   # send kept rows later
+```
+
+| Flag | What it does |
+|---|---|
+| `--dump <game-id>` | Dump that game. Without `--replay`, the replay already in `playback\` is used. |
+| `--no-upload` | Keep the rows on this PC; Paladin is not asked anything at all. |
+| `--squads` | Also print the squads (the owner's own research queue; not needed for the map). |
+| `--force` | Dump even though Paladin already has a map for this game. |
+| `--watch` | Watch the replay afterwards — the same as the page's "Dump, then watch". |
+| `--yes` | Skip the 5-second countdown (for a scripted run). |
+| `--dry-run` | Print the plan and launch nothing. |
+| `--dump-upload <id>` | Send the rows a previous run kept, with no game and no Shield. |
+
+**Two minutes, hands off.** While it runs, do not click, type or bring another window in
+front of the game: the lines are typed into the game's console, and a window that steals
+the focus mid-line would leave half a line in it. The run notices and stops rather than
+retyping (`[fail] Another window took the focus ...`); nothing is damaged and your
+settings are restored either way. An "Account Authentication" message appears on the
+game screen — that is the `-dev` launch, and it does not need answering.
+
+The game is closed by the launcher as soon as the rows are safe: a replay has nothing to
+save, and waiting for the game to unload added over a minute to every run. Ctrl+C stops
+the run at any point, and closes the game the same way before the settings are checked
+and put back: a `-dev` game left running writes its own settings file back afterwards,
+over the restore that was just reported.
+
+**What is sent, and only when a dump succeeds:** the map's printed objects (blueprint
+name, position, entity and squad id, owner), the two players' display names and civs as
+the game prints them, the game build, the map's biome/layout/size/seed/player count, the
+`RUN-OPTIONS` line (which names only the replay), the launch's local date and minute, and
+the launcher version, chord and step timings. **Never** the `USER`, `COMPUTER`,
+`WORKING-DIR` or `LOCALE` lines, the install path, your Steam account, your settings,
+the replay, or either log file — the builder refuses to send a line matching any of those
+forms even if one were ever selected. The exact text is kept at
+`%LOCALAPPDATA%\PaladinReplayLauncher\Sessions\<session>\dump\evidence.txt`, so you can
+read every byte that left the machine.
+
+The clipboard is used to put each line in the console. Whatever text you had on it is
+saved first and put back at the end; if it was empty, it is emptied again rather than
+left holding a console line. An image cannot be put back, and the console says so. The
+console also says so in the one case where Windows refuses to give the clipboard back —
+you are never left holding a line of Lua without being told.
+
+The address the rows go to is the one in `DumpUploadBaseUrl`, and every line that names
+an address names that one, so a run pointed at a test Worker never claims to be sending
+to `paladin.odinmaycall.com`.
+
+Exit codes: 10 the replay never started (a custom map the game does not have) or the
+game's own log never appeared where Paladin looks — the message says which, 11 the
+console never opened, 12 the game is not signed in, 13 a console line was dropped, 14
+fewer objects were printed than the map has, 15 the game closed itself on a script error,
+16 the focus was lost, 17 Paladin refused the map, 18 the game was already running.
+Ctrl+C is 7, as it is for a watch.
 
 ## Installing, and why it stays working
 
@@ -563,7 +633,8 @@ paladin://replay?url=https%3A%2F%2Fexample.com%2Fgame.rec     -> DirectUrlReplay
 paladin://replay?path=C%3A%5Creplays%5Cgame.rec               -> LocalReplayProvider
 paladin://replay/244989270                                    -> archive provider (not built)
 paladin://replay?id=244989270&source=relic                    -> named provider
-paladin://dump?game=246737201&url=...&url=...                 -> dump (parsed; not yet run)
+paladin://dump?game=246737201&url=...&url=...                 -> Dump this game
+paladin://dump?game=246737201&url=...&then=watch              -> dump, then watch it
 ```
 
 Registration writes to `HKCU\Software\Classes\paladin`, so it needs no administrator
@@ -571,9 +642,9 @@ rights. `--unregister-protocol` removes it. If the exe moves, re-run
 `--register-protocol` from the new location.
 
 Everything arriving through a link is untrusted: only `replay` and `dump` are valid
-actions, only http/https URLs are accepted, a dump's `game` must be a plain number, the
-upload target never comes from a link, and a downloaded file name is stripped of any
-directory component before use.
+actions, only http/https URLs are accepted, a dump's `game` must be a plain number, an
+unknown `then=` is ignored rather than obeyed, the upload target never comes from a link,
+and a downloaded file name is stripped of any directory component before use.
 
 `web/paladin-test.html` is a local page with WATCH REPLAY buttons for each form. Open it
 from disk; it is a test fixture, not part of the Paladin site.

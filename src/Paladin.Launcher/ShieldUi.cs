@@ -8,6 +8,12 @@ namespace Paladin.Launcher;
 public interface IShieldUi
 {
     void Header(string replayLabel);
+
+    /// <summary>
+    /// The same banner with the run's own title and subject: "Paladin Replay Launcher —
+    /// dump this game" over "Game:  246737201" (§717 §2.2).
+    /// </summary>
+    void Header(string title, string subjectLabel);
     void Ok(string message);
     void Pending(string message);
     void Warn(string message);
@@ -30,6 +36,15 @@ public sealed class ConsoleShieldUi : IShieldUi
         Console.WriteLine("  Paladin Replay Launcher");
         Console.WriteLine("  " + new string('-', 46));
         Console.WriteLine($"  Replay:  {replayLabel}");
+        Console.WriteLine();
+    }
+
+    public void Header(string title, string subjectLabel)
+    {
+        Console.WriteLine();
+        Console.WriteLine($"  Paladin Replay Launcher — {title}");
+        Console.WriteLine("  " + new string('-', 46));
+        Console.WriteLine($"  Game:    {subjectLabel}");
         Console.WriteLine();
     }
 

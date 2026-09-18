@@ -88,7 +88,7 @@ public sealed record DumpPreflight(bool Reachable, DumpStatus? Status, int? Http
 /// free tier (D4). No cookies, no auth. The target origin is the configured base URL's
 /// and never comes from a link.
 /// </summary>
-public sealed class DumpUploader
+public sealed class DumpUploader : IDumpUploadService
 {
     public const string DefaultBaseUrl = "https://paladin.odinmaycall.com/api/world/";
     public const int UploadTimeoutSeconds = 60;
@@ -134,6 +134,13 @@ public sealed class DumpUploader
 
     public Uri BaseUrl => _base;
     public TimeSpan RetryDelay => _retryDelay;
+
+    /// <summary>
+    /// The host the console names, with the port when it is not the scheme's default:
+    /// "paladin.odinmaycall.com", or "localhost:8787" for a `wrangler dev` target. Uri's
+    /// Authority is exactly that rule.
+    /// </summary>
+    public string Host => _base.Authority;
 
     public static string UserAgentFor(string version) => $"PaladinReplayLauncher/{version} (+{ProjectUrl})";
 

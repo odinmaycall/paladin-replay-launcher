@@ -33,6 +33,10 @@ public sealed class CommandLineOptions
     public bool NoUpload { get; private set; }
     /// <summary>--squads: also type the squad ladder.</summary>
     public bool Squads { get; private set; }
+    /// <summary>--force: dump even though Paladin already has a world layer for the game.</summary>
+    public bool Force { get; private set; }
+    /// <summary>--watch: after a successful dump, start the replay again to watch it (the link's then=watch).</summary>
+    public bool ThenWatch { get; private set; }
     /// <summary>The evidence folder after --dump-upload.</summary>
     public string? DumpUploadPath { get; private set; }
     public bool Verbose { get; private set; }
@@ -91,6 +95,14 @@ public sealed class CommandLineOptions
 
                 case "--squads":
                     options.Squads = true;
+                    break;
+
+                case "--force":
+                    options.Force = true;
+                    break;
+
+                case "--watch":
+                    options.ThenWatch = true;
                     break;
 
                 case "--config":
@@ -209,7 +221,9 @@ public sealed class CommandLineOptions
                 PaladinReplayLauncher.exe "paladin://replay?url=<url-encoded-url>"
                 PaladinReplayLauncher.exe --recover
                 PaladinReplayLauncher.exe --doctor
-                PaladinReplayLauncher.exe --dump <game-id> [--no-upload] [--squads]   (in development)
+                PaladinReplayLauncher.exe --dump <game-id> [--no-upload] [--squads] [--yes]
+                PaladinReplayLauncher.exe --dump-upload <session-id>
+                PaladinReplayLauncher.exe "paladin://dump?game=<id>&url=<url-encoded-url>"
 
               EXAMPLES
                 Launch a replay already on disk:
@@ -247,12 +261,17 @@ public sealed class CommandLineOptions
                     --unregister-protocol Remove it.
                     --register-target <p> Register a specific exe path instead of this one.
                     --config <path>       Use a specific config.json.
-                    --dump <game-id>      Dump this game (in development): start the replay,
-                                          read the map from the game's console and send the
-                                          rows to Paladin. --no-upload keeps them local;
-                                          --squads also prints the squads. Parsed only in
-                                          this build; the run itself is not implemented yet.
-                    --dump-upload <dir>   Send the rows an earlier dump kept (in development).
+                    --dump <game-id>      Dump this game: start the replay, read the map from
+                                          the game's own console and send those rows to
+                                          Paladin. About two minutes, hands off — do not
+                                          click or type while it runs. Without --replay the
+                                          replay already in playback/ is used.
+                    --no-upload           Dump, but keep the rows on this PC.
+                    --squads              Also print the squads (the owner's own queue).
+                    --force               Dump even if Paladin already has this game's map.
+                    --watch               Watch the replay after a successful dump.
+                    --dump-upload <id>    Send the rows an earlier dump kept (a session id or
+                                          that session's folder).
                 -y, --yes                 Answer prompts automatically (for scripts).
                 -v, --verbose             Echo the full log to the console.
                     --version             Print the version and exit.

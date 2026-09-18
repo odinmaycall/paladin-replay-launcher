@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Runtime.Versioning;
 using System.Security.Principal;
 using Paladin.Core.Config;
+using Paladin.Core.Dump;
 using Paladin.Core.Logging;
 using Paladin.Core.Model;
 using Paladin.Core.Replay;
@@ -10,6 +11,25 @@ using Paladin.Core.Steam;
 using Paladin.Launcher.Platform;
 
 namespace Paladin.Launcher;
+
+/// <summary>
+/// The running game, handed to <see cref="SessionRunner.WhileRunning"/>: everything a
+/// dump (or, later, a watch-along) needs to work with a game this runner started, and
+/// nothing that would let it launch, quit or restore anything itself (§717 §3.2).
+/// </summary>
+/// <param name="Pid">The game process this session is watching.</param>
+/// <param name="MainWindow">Its largest visible top-level window, or zero if none was found in time.</param>
+/// <param name="ProcessSeenUtc">When the process first appeared: the zero of every offset in the record.</param>
+/// <param name="ReplayName">The name the replay was placed under in playback\.</param>
+public sealed record GameSessionContext(
+    int Pid,
+    IntPtr MainWindow,
+    DateTime ProcessSeenUtc,
+    string SessionId,
+    string SessionDirectory,
+    string Aoe4DocumentsPath,
+    string ReplayName,
+    int? ReplayBuild);
 
 /// <summary>
 /// One replay session, start to finish. The ordering here is the safety contract:
@@ -27,6 +47,37 @@ public sealed class SessionRunner
 
     public bool DryRun { get; init; }
 
+    /// <summary>
+    /// Run something while the game is up, between "Age of Empires IV is running" and the
+    /// wait for it to close, and let it say how the game should end (§717 §3.2). This is
+    /// the one seam the dump needs: the launch, the Shield, the process monitor and the
+    /// restore stay exactly as they are for a watch. Anything it throws is caught here,
+    /// because an escape would skip the restore.
+    /// </summary>
+    public Func<GameSessionContext, CancellationToken, Task<ExitPolicy>>? WhileRunning { get; init; }
+
+    /// <summary>
+    /// Checked against the name the replay is about to be placed under; a non-null answer
+    /// refuses the launch with that message. A dump uses it to prove the replay it
+    /// downloaded is the game it was asked to dump (§717 §3.3 step 1).
+    /// </summary>
+    public Func<string, string?>? ReplayNameCheck { get; init; }
+
+    /// <summary>A build mismatch is a warning for a watch and a hard stop for a dump (F9): the mission would never start.</summary>
+    public bool RefuseOnBuildMismatch { get; init; }
+
+    /// <summary>
+    /// What to do with the game when the run is interrupted (§717 §2.5's Ctrl+C row:
+    /// "stop typing, ... end the process after the grace, restore"). A watch leaves it
+    /// alone — the user is watching their replay — but a dump's game was started only to
+    /// be read, and it must be gone BEFORE the Shield restores: a -dev game still holding
+    /// its console writes local.ini back over the restore when it is finally closed.
+    /// </summary>
+    public ExitPolicy CancelPolicy { get; init; } = ExitPolicy.WaitForUser;
+
+    /// <summary>False when the caller has already printed its own banner (a dump's names the game, not the replay).</summary>
+    public bool PrintHeader { get; init; } = true;
+
     public SessionRunner(
         LauncherConfig config, PaladinLog log, IShieldUi ui, SessionStore store, ReplayProviderRegistry providers)
     {
@@ -39,7 +90,7 @@ public sealed class SessionRunner
 
     public async Task<int> RunAsync(ReplayRequest request, CancellationToken ct)
     {
-        _ui.Header(DescribeRequest(request));
+        if (PrintHeader) _ui.Header(DescribeRequest(request));
 
         // ---- 1. Environment ------------------------------------------------------
         var env = Aoe4Locator.Detect(_config, _log);
@@ -77,6 +128,11 @@ public sealed class SessionRunner
 
         string? placedReplay = null;
 
+        // Held outside the try so the cancellation handler below can end the game it
+        // started before the Shield restores anything (CancelPolicy).
+        GameProcessMonitor? monitor = null;
+        GameProcessMonitor.GameProcessInfo? game = null;
+
         try
         {
             // ---- 3. Acquire the replay -------------------------------------------
@@ -111,6 +167,17 @@ public sealed class SessionRunner
                 _ui.Warn(compatibility.Message);
                 foreach (var line in BuildCompatibility.SuggestionsFor(compatibility)) _ui.Note(line);
                 session.Notes.Add($"Build mismatch: replay {replay.GameBuild}, game {env.Aoe4GameBuild}.");
+
+                // F9: a dump that cannot reach "Starting mission" is two wasted minutes and
+                // a confusing failure; refuse before anything is placed or launched.
+                if (RefuseOnBuildMismatch)
+                {
+                    _ui.Fail("A dump needs a replay this build can play; nothing was launched.");
+                    session.Outcome = SessionOutcome.AbandonedByUser;
+                    session.RestorePending = false;
+                    _store.Save(session);
+                    return ExitCodes.ReplayUnavailable;
+                }
             }
             else if (compatibility.Verdict == BuildCompatibility.Verdict.Match)
             {
@@ -142,6 +209,17 @@ public sealed class SessionRunner
 
             // ---- 5. Place the replay where AoE4 looks ----------------------------
             var replayName = LaunchCommandBuilder.ReplayFileNameFor(replay.SuggestedFileName, _config.StripReplayExtension);
+
+            if (ReplayNameCheck?.Invoke(replayName) is { } nameProblem)
+            {
+                // Nothing has been placed or launched yet; the snapshot above is simply
+                // checked and dropped, the way a dry run's is.
+                _ui.Fail(nameProblem);
+                session.Notes.Add(nameProblem);
+                await FinishAsync(session, env, snapshots, restorer, placedReplay: null, ct, gameRan: false);
+                return ExitCodes.ReplayUnavailable;
+            }
+
             Directory.CreateDirectory(env.PlaybackPath!);
             placedReplay = Path.Combine(env.PlaybackPath!, replayName);
 
@@ -177,7 +255,7 @@ public sealed class SessionRunner
                 return ExitCodes.Ok;
             }
 
-            var monitor = new GameProcessMonitor(_config.GameProcessNames, env.Aoe4GameExePath, _log);
+            monitor = new GameProcessMonitor(_config.GameProcessNames, env.Aoe4GameExePath, _log);
             var preexisting = monitor.Snapshot().Select(p => p.Pid).ToHashSet();
             if (preexisting.Count > 0)
                 _ui.Warn($"Age of Empires IV already appears to be running ({preexisting.Count} process(es)). Close it first for a clean session.");
@@ -191,7 +269,7 @@ public sealed class SessionRunner
             }
 
             // ---- 7. Monitor -------------------------------------------------------
-            var game = await monitor.WaitForStartAsync(
+            game = await monitor.WaitForStartAsync(
                 preexisting, TimeSpan.FromSeconds(_config.GameStartTimeoutSeconds), ct);
 
             if (game is null)
@@ -203,16 +281,54 @@ public sealed class SessionRunner
             else
             {
                 _ui.Ok("Age of Empires IV is running");
+                var processSeen = DateTime.UtcNow;
                 if (_config.BringGameToFront)
                 {
-                    // Off the main flow: the exit wait below must start now, and the
-                    // window can take a while to exist. Failures only go to the log.
-                    var guard = TimeSpan.FromSeconds(Math.Max(0, _config.GameWindowGuardSeconds));
-                    _ = GameWindow.KeepInFrontAsync(game.Pid, TimeSpan.FromSeconds(_config.GameStartTimeoutSeconds), guard, 3, _log, msg => _ui.Ok(msg), ct)
-                        .ContinueWith(t => _log.Warn($"Bringing the game to the front failed: {t.Exception?.GetBaseException().Message}"),
-                            TaskContinuationOptions.OnlyOnFaulted);
+                    var appear = TimeSpan.FromSeconds(_config.GameStartTimeoutSeconds);
+
+                    if (WhileRunning is null)
+                    {
+                        // A watch: off the main flow, because the exit wait below must start
+                        // now and the window can take a while to exist. Failures only go to
+                        // the log, and nothing here can stop the session.
+                        var guard = TimeSpan.FromSeconds(Math.Max(0, _config.GameWindowGuardSeconds));
+                        Detach(GameWindow.KeepInFrontAsync(game.Pid, appear, guard, 3, _log, msg => _ui.Ok(msg), ct));
+                    }
+                    else
+                    {
+                        // A dump types into that window, so it WAITS for the first raise —
+                        // and takes only that one. The guard loop is not run beside it: it
+                        // raises by pressing Alt, and an Alt from another thread in the
+                        // middle of the dump's Ctrl+V is the half-typed line §3.6 exists to
+                        // prevent. The dump has its own guard — every sequence checks the
+                        // foreground and re-raises once (KeyboardInjector.Deliver).
+                        //
+                        // A raise that fails is a warning, never the end of the session:
+                        // the focus check before each line is what actually decides.
+                        try
+                        {
+                            await GameWindow.RaiseOnceAsync(game.Pid, appear, _log, msg => _ui.Ok(msg), ct);
+                        }
+                        catch (Exception ex) when (ex is not OperationCanceledException)
+                        {
+                            _log.Warn($"Bringing the game to the front failed: {ex.Message}");
+                        }
+                    }
                 }
                 _ui.RunningBanner();
+
+                var exit = ExitPolicy.WaitForUser;
+                if (WhileRunning is not null)
+                {
+                    var context = new GameSessionContext(
+                        game.Pid, GameWindow.FindMainWindow(game.Pid), processSeen, sessionId,
+                        _store.SessionDirectory(sessionId), env.Aoe4DocumentsPath!, replayName, replay.GameBuild);
+                    exit = await RunWhileRunningAsync(context, ct);
+                }
+
+                if (exit.Action == ExitAction.EndProcess)
+                    await EndGameAsync(monitor, game, exit.Grace, ct);
+
                 await monitor.WaitForExitAsync(game, ct, onHeartbeat: () => _store.Heartbeat(session));
                 _ui.Ok("Replay finished");
             }
@@ -225,6 +341,18 @@ public sealed class SessionRunner
         {
             _ui.Warn("Interrupted. Running the settings check before exiting.");
             _log.Warn("Session cancelled by the user; attempting restore.");
+
+            // §2.5's Ctrl+C row: the game this run started for a dump is ended — after
+            // the grace, as a finished dump's is — BEFORE the settings are compared and
+            // put back. A -dev game left running rewrites local.ini (consolehistory
+            // included) when it is finally closed, which would undo the restore the
+            // console is about to report. A watch's CancelPolicy leaves the game alone.
+            if (CancelPolicy.Action == ExitAction.EndProcess && monitor is not null && game is not null)
+            {
+                session.Notes.Add("Interrupted while the dump was running; the game was ended before the restore.");
+                await EndGameAsync(monitor, game, CancelPolicy.Grace, CancellationToken.None);
+            }
+
             await FinishAsync(session, env, snapshots, restorer, placedReplay, CancellationToken.None, gameRan: true);
             return ExitCodes.Cancelled;
         }
@@ -238,6 +366,68 @@ public sealed class SessionRunner
             _store.Save(session);
             return ExitCodes.UnexpectedError;
         }
+    }
+
+    /// <summary>
+    /// Let a background task run on without awaiting it, but never in silence: a failure
+    /// goes to the log. A cancelled task is not a failure and says nothing.
+    /// </summary>
+    private void Detach(Task task) =>
+        _ = task.ContinueWith(
+            t => _log.Warn($"Bringing the game to the front failed: {t.Exception?.GetBaseException().Message}"),
+            CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
+
+    /// <summary>
+    /// The hook, wrapped. Nothing it does may stop the restore: an exception here would
+    /// land in RunAsync's unhandled-error catch, which reports and saves but runs no
+    /// restore, so it is caught, reported and turned into "leave the game to the user".
+    /// Ctrl+C is not caught: cancellation belongs to RunAsync's own handler.
+    /// </summary>
+    private async Task<ExitPolicy> RunWhileRunningAsync(GameSessionContext context, CancellationToken ct)
+    {
+        try
+        {
+            return await WhileRunning!(context, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _log.Error("The while-running hook failed", ex);
+            _ui.Fail($"Something went wrong while the game was running: {ex.Message}");
+            _ui.Note("Your settings are still checked and restored below.");
+            return ExitPolicy.WaitForUser;
+        }
+    }
+
+    /// <summary>
+    /// D1 amended: the launcher ends the game itself. It waits the grace first — after a
+    /// fatal Scar error the game closes in seconds by itself — and only then kills the one
+    /// process this session started, re-checking that it is still the game's own exe.
+    /// A replay has nothing to save, and the Shield restores after any exit.
+    /// </summary>
+    private async Task EndGameAsync(GameProcessMonitor monitor, GameProcessMonitor.GameProcessInfo game, TimeSpan grace, CancellationToken ct)
+    {
+        _ui.Pending(Paladin.Core.Dump.DumpConsoleText.ClosingTheGame);
+
+        var deadline = DateTime.UtcNow + grace;
+        while (DateTime.UtcNow < deadline)
+        {
+            if (!monitor.IsRunning(game))
+            {
+                _log.Info($"The game closed by itself within the {grace.TotalSeconds:0} s grace.");
+                return;
+            }
+            await Task.Delay(500, ct);
+        }
+
+        if (!monitor.IsRunning(game)) return;
+
+        _ui.Warn(Paladin.Core.Dump.DumpConsoleText.EndedTheGame((int)grace.TotalSeconds));
+        if (!monitor.TryEndProcess(game, out var detail))
+            _ui.Warn($"The game could not be ended ({detail}); waiting for it to close.");
     }
 
     /// <summary>
@@ -546,7 +736,20 @@ public static class ExitCodes
     public const int Cancelled = 7;
     public const int BadArguments = 8;
     public const int UnexpectedError = 9;
-    // 10-18 are reserved for the dump failures of §717 §2.5 (pass B).
+
+    // 10-18 are the dump failures of §717 §2.5. The numbers live in Paladin.Core beside
+    // the texts they belong to (DumpExitCodes); these names are how the rest of the
+    // launcher and the README refer to them.
+    public const int DumpReplayNeverStarted = DumpExitCodes.ReplayNeverStarted;   // F1
+    public const int DumpConsoleNeverOpened = DumpExitCodes.ConsoleNeverOpened;   // F2
+    public const int DumpNotSignedIn = DumpExitCodes.NotSignedIn;                 // F3
+    public const int DumpDefinitionDropped = DumpExitCodes.DefinitionDropped;     // F4
+    public const int DumpIncomplete = DumpExitCodes.Incomplete;                   // F5
+    public const int DumpFatalScarError = DumpExitCodes.FatalScarError;           // F6
+    public const int DumpFocusLost = DumpExitCodes.FocusLost;                     // F7
+    public const int DumpUploadRejected = DumpExitCodes.UploadRejected;           // F10
+    public const int DumpGameAlreadyRunning = DumpExitCodes.GameAlreadyRunning;   // F8
+
     /// <summary>The command is parsed and understood but this build cannot run it yet.</summary>
     public const int NotImplemented = 19;
 }

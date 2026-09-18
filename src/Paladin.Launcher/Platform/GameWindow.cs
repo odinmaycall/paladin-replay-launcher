@@ -79,13 +79,18 @@ public static class GameWindow
     }
 
     /// <summary>
-    /// Wait up to <paramref name="appearTimeout"/> for the process's window, bring it
-    /// to the front, then for <paramref name="guard"/> bring it back whenever it is
-    /// found minimised, at most <paramref name="maxRaises"/> times in all. Returns the
-    /// number of times the window was put in front.
+    /// The first half of <see cref="KeepInFrontAsync"/>: wait up to
+    /// <paramref name="appearTimeout"/> for the process's window and put it in front
+    /// once. Returns the window (zero when none appeared) and whether it ended up in
+    /// front.
+    ///
+    /// It is a member of its own because a dump has to WAIT for that first raise before
+    /// it types, and must not wait for the guard loop that follows it: the guard runs for
+    /// GameWindowGuardSeconds (30 s by default), which is a sixth of a dump's whole
+    /// mission budget spent doing nothing.
     /// </summary>
-    public static async Task<int> KeepInFrontAsync(
-        int pid, TimeSpan appearTimeout, TimeSpan guard, int maxRaises, PaladinLog log, Action<string>? onRaised, CancellationToken ct)
+    public static async Task<(IntPtr Window, bool Raised)> RaiseOnceAsync(
+        int pid, TimeSpan appearTimeout, PaladinLog log, Action<string>? onRaised, CancellationToken ct)
     {
         var appearBy = DateTime.UtcNow + appearTimeout;
         var hWnd = IntPtr.Zero;
@@ -98,17 +103,24 @@ public static class GameWindow
         if (hWnd == IntPtr.Zero)
         {
             log.Warn($"No window appeared for pid {pid} within {appearTimeout.TotalSeconds:0}s; nothing to bring to the front.");
-            return 0;
+            return (IntPtr.Zero, false);
         }
 
+        if (!BringToFront(hWnd, log)) return (hWnd, false);
+        log.Info($"Brought window {hWnd} of pid {pid} to the front.");
+        onRaised?.Invoke("Brought Age of Empires IV to the front");
+        return (hWnd, true);
+    }
+
+    /// <summary>
+    /// The second half: for <paramref name="guard"/>, bring the process's window back
+    /// whenever it is found minimised or swapped for another, at most
+    /// <paramref name="maxRaises"/> times. Returns how many times it did.
+    /// </summary>
+    public static async Task<int> GuardAsync(
+        int pid, IntPtr hWnd, TimeSpan guard, int maxRaises, PaladinLog log, Action<string>? onRaised, CancellationToken ct)
+    {
         var raises = 0;
-        if (BringToFront(hWnd, log))
-        {
-            raises++;
-            log.Info($"Brought window {hWnd} of pid {pid} to the front.");
-            onRaised?.Invoke("Brought Age of Empires IV to the front");
-        }
-
         var guardUntil = DateTime.UtcNow + guard;
         while (DateTime.UtcNow < guardUntil && raises < maxRaises && !ct.IsCancellationRequested)
         {
@@ -129,5 +141,20 @@ public static class GameWindow
             }
         }
         return raises;
+    }
+
+    /// <summary>
+    /// Wait up to <paramref name="appearTimeout"/> for the process's window, bring it
+    /// to the front, then for <paramref name="guard"/> bring it back whenever it is
+    /// found minimised, at most <paramref name="maxRaises"/> times in all. Returns the
+    /// number of times the window was put in front.
+    /// </summary>
+    public static async Task<int> KeepInFrontAsync(
+        int pid, TimeSpan appearTimeout, TimeSpan guard, int maxRaises, PaladinLog log, Action<string>? onRaised, CancellationToken ct)
+    {
+        var (hWnd, raised) = await RaiseOnceAsync(pid, appearTimeout, log, onRaised, ct);
+        if (hWnd == IntPtr.Zero) return 0;
+        var first = raised ? 1 : 0;
+        return first + await GuardAsync(pid, hWnd, guard, maxRaises - first, log, onRaised, ct);
     }
 }

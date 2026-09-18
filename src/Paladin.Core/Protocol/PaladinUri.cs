@@ -30,13 +30,22 @@ public static class PaladinUri
     /// <summary>A Paladin game id is a positive number of at most this many digits (the Worker's route is \d{1,15}).</summary>
     public const int MaxGameIdDigits = 15;
 
+    /// <summary>"Dump, then watch": the page's &amp;then=watch on a dump link (§717 §3.1).</summary>
+    public const string ThenWatchValue = "watch";
+
     /// <param name="Action">"replay" or "dump" when Ok.</param>
     /// <param name="GameId">The game the rows are sent under; only a dump link carries one.</param>
-    public sealed record ParseResult(bool Ok, ReplayRequest? Request, string? Error, string? Action = null, long? GameId = null)
+    /// <param name="ThenWatch">
+    /// The link carried then=watch: once the dump has been sent, the replay is launched
+    /// again as an ordinary watch session. Any other then= value is ignored rather than
+    /// refused — an unknown follow-on is not a reason to throw away a good dump link.
+    /// </param>
+    public sealed record ParseResult(
+        bool Ok, ReplayRequest? Request, string? Error, string? Action = null, long? GameId = null, bool ThenWatch = false)
     {
         public static ParseResult Fail(string error) => new(false, null, error);
-        public static ParseResult Success(ReplayRequest request, string action = ReplayAction, long? gameId = null) =>
-            new(true, request, null, action, gameId);
+        public static ParseResult Success(ReplayRequest request, string action = ReplayAction, long? gameId = null, bool thenWatch = false) =>
+            new(true, request, null, action, gameId, thenWatch);
 
         public bool IsDump => Ok && Action == DumpAction;
     }
@@ -99,6 +108,7 @@ public static class PaladinUri
         // A dump is keyed by the game id the rows are sent under. It is digits or nothing:
         // a repeated game= (joined with a comma by ParseQueryString) or anything else is refused.
         long? gameId = null;
+        var thenWatch = false;
         if (isDump)
         {
             var game = query["game"];
@@ -107,6 +117,10 @@ public static class PaladinUri
                     ? $"A {DumpAction} link needs game=<id>."
                     : $"'{game}' is not a game id (1 to {MaxGameIdDigits} digits).");
             gameId = id;
+
+            // "Dump, then watch" is the same dump with a watch after it. Only this one value
+            // is understood; anything else in then= is ignored, never refused.
+            thenWatch = string.Equals(query["then"], ThenWatchValue, StringComparison.OrdinalIgnoreCase);
         }
 
         // A link may carry several `url` values. HttpUtility joins repeats with commas,
@@ -136,7 +150,7 @@ public static class PaladinUri
                 Value = accepted[0],
                 Fallbacks = accepted.Skip(1).ToList(),
                 SuggestedName = NullIfBlank(query["name"]),
-            }, actionName, gameId);
+            }, actionName, gameId, thenWatch);
         }
 
         var path = query["path"];
@@ -147,7 +161,7 @@ public static class PaladinUri
                 Kind = "local",
                 Value = path,
                 SuggestedName = NullIfBlank(query["name"]),
-            }, actionName, gameId);
+            }, actionName, gameId, thenWatch);
         }
 
         // A dump needs a replay it can fetch or find; the archive-id form has no provider.
@@ -192,10 +206,11 @@ public static class PaladinUri
             ? $"{Scheme}://replay/{Uri.EscapeDataString(matchId)}"
             : $"{Scheme}://replay?id={Uri.EscapeDataString(matchId)}&source={Uri.EscapeDataString(source)}";
 
-    /// <summary>paladin://dump?game=&lt;id&gt;&amp;url=...&amp;url=... — what the site's "Dump this game" button emits (§717 §4.1).</summary>
-    public static string BuildDumpLink(long gameId, IEnumerable<string> replayUrls) =>
+    /// <summary>paladin://dump?game=&lt;id&gt;&amp;url=...&amp;url=... — what the site's "Dump this game" button emits (§717 §4.1); thenWatch adds the page's "Dump, then watch".</summary>
+    public static string BuildDumpLink(long gameId, IEnumerable<string> replayUrls, bool thenWatch = false) =>
         $"{Scheme}://{DumpAction}?game={gameId.ToString(CultureInfo.InvariantCulture)}&"
-        + string.Join("&", replayUrls.Select(u => $"url={Uri.EscapeDataString(u)}"));
+        + string.Join("&", replayUrls.Select(u => $"url={Uri.EscapeDataString(u)}"))
+        + (thenWatch ? $"&then={ThenWatchValue}" : "");
 
     private static string? NullIfBlank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
 }

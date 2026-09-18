@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Runtime.Versioning;
 using Paladin.Core.Config;
+using Paladin.Core.Dump;
 using Paladin.Core.Logging;
 using Paladin.Core.Protocol;
 using Paladin.Core.Replay;
@@ -109,8 +110,10 @@ internal static class Program
                     return await RunLaunch(options, config, log, ui, store);
 
                 case Command.Dump:
+                    return await RunDump(options, config, log, ui, store);
+
                 case Command.DumpUpload:
-                    return RunDumpStub(options, ui);
+                    return await RunDumpUpload(options, config, log, ui, store);
 
                 default:
                     CommandLineOptions.PrintUsage();
@@ -162,47 +165,141 @@ internal static class Program
     }
 
     /// <summary>
-    /// "Dump this game" (§717). Pass A ships the no-game core — Paladin.Core/Dump and
-    /// this parsing — and nothing that touches the window, the keyboard or the game;
-    /// the run itself is pass B. Until then the command is understood, checked as far
-    /// as it can be, and refused, so an installed 0.3.x never launches a replay it was
-    /// asked to dump.
+    /// "Dump this game" (§717 §3.1, §3.3): start the replay, read the map out of the
+    /// game's own console and send those rows to Paladin. The run itself is
+    /// <see cref="DumpRunner"/>; this resolves the request and routes Ctrl+C into the
+    /// restore exactly as a watch does.
     /// </summary>
-    private static int RunDumpStub(CommandLineOptions options, IShieldUi ui)
+    private static async Task<int> RunDump(
+        CommandLineOptions options, LauncherConfig config, PaladinLog log, IShieldUi ui, SessionStore store)
     {
-        if (options.Command == Command.Dump)
-        {
-            if (options.NoDev)
-            {
-                // F12: the console only exists under -dev.
-                ui.Fail("A dump needs the -dev launch; remove --no-dev.");
-                return ExitCodes.BadArguments;
-            }
+        // A crashed earlier session is put right before a new snapshot is taken, as for a watch.
+        new RecoveryRunner(config, log, ui, store).RunPending(interactive: !options.AssumeYes);
 
-            if (options.PaladinUri is not null)
-            {
-                var parsed = PaladinUri.Parse(options.PaladinUri);
-                if (!parsed.Ok)
-                {
-                    ui.Fail($"That paladin:// link could not be used: {parsed.Error}");
-                    return ExitCodes.BadArguments;
-                }
-            }
-            else if (options.DumpGameId is null)
-            {
-                ui.Fail($"--dump needs the game's id (up to 15 digits), got '{options.DumpGameInput ?? ""}'.");
-                return ExitCodes.BadArguments;
-            }
-        }
-        else if (string.IsNullOrWhiteSpace(options.DumpUploadPath))
+        var request = ResolveDumpRequest(options, config, log, ui);
+        if (request is null) return ExitCodes.BadArguments;
+
+        var providers = new ReplayProviderRegistry()
+            .Register(new LocalReplayProvider(log))
+            .Register(new DirectUrlReplayProvider(log));
+
+        if (!providers.Providers.Any(p => p.CanHandle(request.Replay)))
         {
-            ui.Fail("--dump-upload needs the folder an earlier dump kept its rows in.");
+            ui.Fail($"No replay provider handles '{request.Replay.Kind}' yet, so this game cannot be dumped.");
+            ui.Note($"Available now: {string.Join(", ", providers.Providers.Select(p => p.Id))}.");
+            return ExitCodes.ReplayUnavailable;
+        }
+
+        var runner = new DumpRunner(config, log, ui, store, providers, AppVersion()) { DryRun = options.DryRun };
+
+        using var cts = new CancellationTokenSource();
+        Console.CancelKeyPress += (_, e) =>
+        {
+            e.Cancel = true;   // handle it ourselves so the restore still runs
+            // Before the Shield has a snapshot — the pre-flight, the countdown — there is
+            // nothing to put back, and promising a restore of nothing is one more thing
+            // for the user to wonder about.
+            ui.Warn(runner.SessionStarted
+                ? "Stopping — Paladin Shield will still check and restore your settings."
+                : "Stopping — nothing has been launched, so there is nothing to put back.");
+            cts.Cancel();
+        };
+
+        var exit = await runner.RunAsync(request, cts.Token);
+
+        // "Dump, then watch": the dump ends its own game as soon as the evidence is safe
+        // (D1 amended), so the watch is a second, ordinary session — same replay, same
+        // Shield — and only after a dump that actually worked.
+        if (request.ThenWatch && exit == ExitCodes.Ok && !options.DryRun && !cts.IsCancellationRequested)
+        {
+            ui.Note("Now starting the replay again to watch it.");
+            var watch = new SessionRunner(config, log, ui, store, providers);
+            return await watch.RunAsync(request.Replay, cts.Token);
+        }
+        if (request.ThenWatch && exit != ExitCodes.Ok)
+            ui.Note("The replay was not started again to watch: the dump did not finish.");
+
+        return exit;
+    }
+
+    private static async Task<int> RunDumpUpload(
+        CommandLineOptions options, LauncherConfig config, PaladinLog log, IShieldUi ui, SessionStore store)
+    {
+        if (string.IsNullOrWhiteSpace(options.DumpUploadPath))
+        {
+            ui.Fail("--dump-upload needs the session id, or the folder an earlier dump kept its rows in.");
             return ExitCodes.BadArguments;
         }
 
-        ui.Fail("dump: not yet implemented (pass B)");
-        ui.Note("This build parses the command and the paladin://dump link; the run lands in the next release.");
-        return ExitCodes.NotImplemented;
+        using var cts = new CancellationTokenSource();
+        Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
+
+        var runner = new DumpRunner(config, log, ui, store, new ReplayProviderRegistry(), AppVersion());
+        return await runner.ReSendAsync(options.DumpUploadPath, cts.Token);
+    }
+
+    /// <summary>The dump's request, from a paladin://dump link or from --dump &lt;id&gt; with a replay.</summary>
+    private static DumpRequest? ResolveDumpRequest(
+        CommandLineOptions options, LauncherConfig config, PaladinLog log, IShieldUi ui)
+    {
+        if (options.NoDev)
+        {
+            // F12: the developer console only exists under -dev.
+            ui.Fail("A dump needs the -dev launch; remove --no-dev.");
+            return null;
+        }
+
+        long gameId;
+        ReplayRequest replay;
+        var thenWatch = false;
+
+        if (options.PaladinUri is not null)
+        {
+            var parsed = PaladinUri.Parse(options.PaladinUri);
+            if (!parsed.Ok)
+            {
+                ui.Fail($"That paladin:// link could not be used: {parsed.Error}");
+                return null;
+            }
+            if (!parsed.IsDump || parsed.GameId is null || parsed.Request is null)
+            {
+                ui.Fail("That is not a paladin://dump link.");
+                return null;
+            }
+            gameId = parsed.GameId.Value;
+            replay = parsed.Request;
+            thenWatch = parsed.ThenWatch;
+        }
+        else
+        {
+            if (options.DumpGameId is not long id)
+            {
+                ui.Fail($"--dump needs the game's id (up to {PaladinUri.MaxGameIdDigits} digits), got '{options.DumpGameInput ?? ""}'.");
+                return null;
+            }
+            gameId = id;
+
+            // Without --replay the replay already in the playback folder is used: the owner's
+            // queue downloads AgeIV_Replay_<id> there once and dumps it again and again.
+            replay = options.ReplayInput is not null
+                ? ReplayProviderRegistry.ClassifyRawInput(options.ReplayInput)
+                : new ReplayRequest { Kind = "local", Value = PlaybackReplayPath(config, log, gameId) };
+        }
+
+        return new DumpRequest(
+            gameId, replay,
+            Upload: !options.NoUpload,
+            Squads: options.Squads,
+            Force: options.Force,
+            AssumeYes: options.AssumeYes,
+            ThenWatch: thenWatch || options.ThenWatch);
+    }
+
+    /// <summary>playback\AgeIV_Replay_&lt;id&gt;, the file the owner's queue already downloaded.</summary>
+    private static string PlaybackReplayPath(LauncherConfig config, PaladinLog log, long gameId)
+    {
+        var playback = Aoe4Locator.Detect(config, log).PlaybackPath ?? config.PlaybackSubfolder;
+        return Path.Combine(playback, $"AgeIV_Replay_{gameId}");
     }
 
     private static ReplayRequest? ResolveRequest(CommandLineOptions options, IShieldUi ui)

@@ -135,6 +135,64 @@ public sealed class GameProcessMonitor
         _log.Info("Age of Empires IV has exited.");
     }
 
+    /// <summary>Is that exact process still up? False once it has exited or been replaced.</summary>
+    public bool IsRunning(GameProcessInfo game)
+    {
+        try
+        {
+            using var process = Process.GetProcessById(game.Pid);
+            return !process.HasExited;
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Ends the one process this session started (§717 D1 amended). The name and the exe
+    /// path are checked again first: a pid can be reused within a session's lifetime, and
+    /// killing whatever inherited it would be unforgivable. The process tree is left alone;
+    /// only the game itself is ended.
+    /// </summary>
+    public bool TryEndProcess(GameProcessInfo game, out string detail)
+    {
+        try
+        {
+            using var process = Process.GetProcessById(game.Pid);
+            if (process.HasExited) { detail = "it had already exited"; return true; }
+
+            if (!_processNames.Any(name => string.Equals(name, process.ProcessName, StringComparison.OrdinalIgnoreCase)))
+            {
+                detail = $"pid {game.Pid} is now '{process.ProcessName}', not the game";
+                _log.Warn($"Refusing to end pid {game.Pid}: {detail}.");
+                return false;
+            }
+            if (!MatchesExpectedPath(process))
+            {
+                detail = $"pid {game.Pid} is not running the expected Age of Empires IV executable";
+                _log.Warn($"Refusing to end pid {game.Pid}: {detail}.");
+                return false;
+            }
+
+            _log.Info($"Ending {process.ProcessName} (pid {game.Pid}); a replay has nothing to save.");
+            process.Kill(entireProcessTree: false);
+            detail = "ended";
+            return true;
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            detail = "it had already exited";
+            return true;
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or NotSupportedException)
+        {
+            detail = ex.Message;
+            _log.Warn($"Could not end pid {game.Pid}: {ex.Message}");
+            return false;
+        }
+    }
+
     private bool MatchesExpectedPath(Process process)
     {
         if (_expectedExePath is null) return true;

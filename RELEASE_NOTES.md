@@ -3,6 +3,49 @@
 Opens an Age of Empires IV replay and puts your game settings back exactly as they were
 afterwards.
 
+<!-- DRAFT — not released. The version in the csproj is still 0.3.0; this section is
+     written as the release will read and is edited until the 0.4.0 build is published
+     (§717 pass E). Nothing below it has changed. -->
+
+## New in 0.4.0 (draft)
+
+- **Dump this game.** A Paladin match page whose map panel has no World layer now offers
+  a second button beside WATCH REPLAY. It starts that game's replay on your PC, reads the
+  map's objects out of the game's own developer console and sends those rows to Paladin,
+  which checks them against its own data for that game and draws the World layer from
+  then on. About two minutes, hands off.
+- **What that sends, and when.** Only on your click, and only the map's printed rows:
+  every object's blueprint name, position, entity and squad id and owner; the two
+  players' names and civs as the game prints them; the game build; the map's biome,
+  layout, size, seed and player count; the `RUN-OPTIONS` line, which names only the
+  replay; the launch's local date and minute; and the launcher's version, chord and step
+  timings. Never your Windows user or computer name, the install path, your locale, your
+  Steam account, your settings, the replay itself or either of the game's log files. The
+  exact text that left the machine is kept in the session folder so you can read it.
+  `--dump <id> --no-upload` does the whole run and sends nothing at all.
+- **It tells you before it starts.** The console lists what will happen and what will be
+  sent, then counts five seconds down: Enter starts it now, Ctrl+C stops it. `--yes`
+  skips the countdown for a scripted run.
+- **Hands off while it runs.** The lines are typed into the game's console, so another
+  window taking the focus mid-line would leave half a line in it. The run watches the
+  foreground before and after every line and stops with a plain message rather than
+  retyping anything. Whatever it printed is kept either way, and your settings are always
+  restored.
+- **The `-dev` launch's "Account Authentication" message is normal** and needs no answer;
+  the dump runs with it on screen, as it always has.
+- **The launcher closes the game itself** once the rows are safe. A replay has nothing to
+  save, and waiting for the game to unload added over a minute to every run. Ctrl+C mid-run
+  closes it the same way, before your settings are checked and put back — a `-dev` game
+  left running would write its own settings file back over the restore.
+- **Your clipboard is borrowed and given back.** Each console line goes in by paste; the
+  text you had on the clipboard is saved first and put back at the end. If it was empty,
+  it is emptied again rather than left holding a console line. An image cannot be put
+  back, and the console says so rather than pretending otherwise — as it does in the one
+  case where Windows refuses to give the clipboard back at all.
+- **If Paladin cannot be reached**, the rows are kept and
+  `PaladinReplayLauncher.exe --dump-upload <session-id>` sends them later, with no game
+  and no second two minutes.
+
 ## New in 0.3.0
 
 - **The game comes to the front on its own.** When Age of Empires IV goes fullscreen a
@@ -57,8 +100,11 @@ Committers, reviewers and approvers: [OdinMayCall](https://github.com/odinmaycal
 
 Privacy: this program will not transfer any information to other networked systems
 unless specifically requested by the user or the person installing or operating it. Its
-only network request is downloading the replay named in the link you clicked. No
-telemetry. Full policy: [README — Code signing policy](README.md#code-signing-policy).
+only network request is downloading the replay named in the link you clicked. From 0.4.0,
+clicking "Dump this game" also asks paladin.odinmaycall.com whether that game already has
+a map and, if not, uploads that game's printed world rows (about 150-400 KB of text,
+listed in the console before sending) to it; nothing else, and never without that click.
+No telemetry. Full policy: [README — Code signing policy](README.md#code-signing-policy).
 
 ## Install
 
