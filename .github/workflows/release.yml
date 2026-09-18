@@ -33,8 +33,21 @@ on:
     tags: ["v*"]
   workflow_dispatch:
     inputs:
+      # THE CHECKBOX IS GONE. Runs 6, 7, 8 and 9 all reported "publish_unsigned not ticked" with the box
+      # ticked, under three different readings of it, and run 9 still uploaded the test artifact — which
+      # only the NOT-publishing path does. A `type: boolean` input is the one input type whose value has
+      # to survive a type coercion to be read, so it is replaced by a `type: choice`, whose value is a
+      # plain string in every context and which the UI shows as a dropdown you must actively set. The old
+      # boolean is still read below, so a dispatch made from an older form still works.
+      publish:
+        description: "What this run should do. An unsigned release makes SmartScreen warn and Smart App Control block it."
+        type: choice
+        default: "test build only"
+        options:
+          - "test build only"
+          - "publish an UNSIGNED release"
       publish_unsigned:
-        description: "Publish an UNSIGNED release (SmartScreen warns, Smart App Control blocks). Deliberate use only."
+        description: "Deprecated, ignored unless the dropdown above is left alone. Use the dropdown."
         type: boolean
         default: false
       tag:
@@ -76,12 +89,22 @@ jobs:
           # Both spellings are read, so neither context being empty can lose the run, and both are
           # PRINTED to the log and the summary — a fourth failure will say what actually arrived
           # instead of needing another guess.
+          RAW_PUBLISH: ${{ inputs.publish }}
+          RAW_EVENT_PUBLISH: ${{ github.event.inputs.publish }}
           RAW_INPUTS: ${{ inputs.publish_unsigned }}
           RAW_EVENT_INPUTS: ${{ github.event.inputs.publish_unsigned }}
         run: |
-          Write-Host "publish_unsigned as it arrived - inputs: '$env:RAW_INPUTS' | github.event.inputs: '$env:RAW_EVENT_INPUTS'"
+          Write-Host "publish   -> inputs:'$env:RAW_PUBLISH' event:'$env:RAW_EVENT_PUBLISH'"
+          Write-Host "publish_unsigned (deprecated) -> inputs:'$env:RAW_INPUTS' event:'$env:RAW_EVENT_INPUTS'"
           $isTag = "${{ env.IS_TAG }}" -eq "true"
-          $unsigned = ("$env:RAW_INPUTS" -eq "true") -or ("$env:RAW_EVENT_INPUTS" -eq "true")
+          $chose = ("$env:RAW_PUBLISH" -eq "publish an UNSIGNED release") -or ("$env:RAW_EVENT_PUBLISH" -eq "publish an UNSIGNED release")
+          $ticked = ("$env:RAW_INPUTS" -eq "true") -or ("$env:RAW_EVENT_INPUTS" -eq "true")
+          $unsigned = $chose -or $ticked
+          # The run SUMMARY needs signing in to read, so the decision is also written into the test
+          # artifact's NAME, which the public run page shows. Four failed publishes were spent guessing at
+          # a value nobody outside the repo could see.
+          $diag = "publish-'$env:RAW_PUBLISH'-event-'$env:RAW_EVENT_PUBLISH'-box-'$env:RAW_INPUTS'" -replace '[^A-Za-z0-9._-]', '_'
+          "RUN_DIAG=$diag" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           $csproj = Get-Content src/Paladin.Launcher/Paladin.Launcher.csproj -Raw
           if ($csproj -notmatch '<Version>([^<]+)</Version>') { Write-Error "No <Version> in the csproj"; exit 1 }
           $version = $Matches[1]
@@ -94,13 +117,13 @@ jobs:
             $releaseTag = if ($given) { $given } else { "v$version" }
             if ($releaseTag -notmatch '^v\d+\.\d+\.\d+$') { Write-Error "Tag '$releaseTag' is not of the form vX.Y.Z"; exit 1 }
             if ($releaseTag -ne "v$version") { Write-Error "Tag '$releaseTag' does not match the csproj version '$version' — change one of them"; exit 1 }
-            $line = "UNSIGNED release of $releaseTag (publish_unsigned ticked; tag from " + $(if ($given) { "the tag box" } else { "the csproj" }) + ")"
+            $line = "UNSIGNED release of $releaseTag (deliberate; tag from " + $(if ($given) { "the tag box" } else { "the csproj" }) + ")"
           } else {
-            $line = "TEST BUILD ONLY - no release (publish_unsigned not ticked)"
+            $line = "TEST BUILD ONLY - no release (the publish dropdown was not set to 'publish an UNSIGNED release')"
           }
           Write-Host $line
           "### $line" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
-          "publish_unsigned arrived as inputs='$env:RAW_INPUTS' github.event.inputs='$env:RAW_EVENT_INPUTS'" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          "publish arrived as inputs='$env:RAW_PUBLISH' github.event.inputs='$env:RAW_EVENT_PUBLISH'; the deprecated box as '$env:RAW_INPUTS'/'$env:RAW_EVENT_INPUTS'" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
           "RELEASE_TAG=$releaseTag" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           # every later step's `if:` reads this, and a step's GITHUB_ENV write is what the env context
           # gives them — so the decision is made once, here, and never re-derived from a raw input.
@@ -209,5 +232,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: env.IS_TAG != 'true' && env.UNSIGNED_RELEASE != 'true'
         with:
-          name: PaladinReplayLauncher
+          # the name carries what the run actually received, because the run summary needs auth to read
+          name: PaladinReplayLauncher-testbuild-${{ env.RUN_DIAG }}
           path: release/
