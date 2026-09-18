@@ -5,6 +5,10 @@ namespace Paladin.Launcher;
 public enum Command { Launch, Observe, Recover, Doctor, Install, Uninstall, RegisterProtocol, UnregisterProtocol, Version, Help,
     /// <summary>Maintenance: bring a process's window to the front (--raise-window pid).</summary>
     RaiseWindow,
+    /// <summary>"Dump this game" (§717): --dump &lt;gameId&gt; or a paladin://dump link. Parsed in 0.3.x; run from pass B.</summary>
+    Dump,
+    /// <summary>Send an earlier dump's kept rows: --dump-upload &lt;evidence folder&gt;.</summary>
+    DumpUpload,
 }
 
 public sealed class CommandLineOptions
@@ -21,6 +25,16 @@ public sealed class CommandLineOptions
     public bool ProtectExtended { get; private set; }
     public bool AssumeYes { get; private set; }
     public int RaiseWindowPid { get; private set; }
+    /// <summary>The game id after --dump, when it parsed as one (digits, at most 15).</summary>
+    public long? DumpGameId { get; private set; }
+    /// <summary>What followed --dump, verbatim, so a bad value can be quoted back.</summary>
+    public string? DumpGameInput { get; private set; }
+    /// <summary>--no-upload: keep the rows local (the owner's own queue).</summary>
+    public bool NoUpload { get; private set; }
+    /// <summary>--squads: also type the squad ladder.</summary>
+    public bool Squads { get; private set; }
+    /// <summary>The evidence folder after --dump-upload.</summary>
+    public string? DumpUploadPath { get; private set; }
     public bool Verbose { get; private set; }
     public bool ShowHelp { get; private set; }
 
@@ -33,23 +47,50 @@ public sealed class CommandLineOptions
             return options;
         }
 
+        var dumpSeen = false;
+
         for (var i = 0; i < args.Length; i++)
         {
             var arg = args[i];
 
             // A bare paladin:// argument is how Windows invokes us from a browser link.
+            // Its action decides the command: a dump link is not a launch (§717 §3.1).
             if (Paladin.Core.Protocol.PaladinUri.LooksLikePaladinUri(arg))
             {
                 options.PaladinUri = arg;
-                options.Command = Command.Launch;
+                options.Command = string.Equals(
+                    Paladin.Core.Protocol.PaladinUri.ActionOf(arg), Paladin.Core.Protocol.PaladinUri.DumpAction, StringComparison.Ordinal)
+                    ? Command.Dump
+                    : Command.Launch;
                 continue;
             }
 
             switch (arg.ToLowerInvariant())
             {
                 case "--replay" or "-r":
+                    // With --dump, --replay names the replay to dump rather than one to watch.
                     options.ReplayInput = Next(args, ref i);
-                    options.Command = Command.Launch;
+                    if (!dumpSeen) options.Command = Command.Launch;
+                    break;
+
+                case "--dump":
+                    options.DumpGameInput = Next(args, ref i);
+                    options.DumpGameId = Paladin.Core.Protocol.PaladinUri.TryParseGameId(options.DumpGameInput, out var gameId) ? gameId : null;
+                    options.Command = Command.Dump;
+                    dumpSeen = true;
+                    break;
+
+                case "--dump-upload":
+                    options.DumpUploadPath = Next(args, ref i);
+                    options.Command = Command.DumpUpload;
+                    break;
+
+                case "--no-upload":
+                    options.NoUpload = true;
+                    break;
+
+                case "--squads":
+                    options.Squads = true;
                     break;
 
                 case "--config":
@@ -138,11 +179,13 @@ public sealed class CommandLineOptions
                     if (!arg.StartsWith('-') && options.ReplayInput is null)
                     {
                         options.ReplayInput = arg;
-                        options.Command = Command.Launch;
+                        if (!dumpSeen) options.Command = Command.Launch;
                     }
                     break;
             }
         }
+
+        if (dumpSeen && options.Command == Command.Launch) options.Command = Command.Dump;
 
         if (options.Command == Command.Launch && options.ReplayInput is null && options.PaladinUri is null)
             options.ShowHelp = true;
@@ -166,6 +209,7 @@ public sealed class CommandLineOptions
                 PaladinReplayLauncher.exe "paladin://replay?url=<url-encoded-url>"
                 PaladinReplayLauncher.exe --recover
                 PaladinReplayLauncher.exe --doctor
+                PaladinReplayLauncher.exe --dump <game-id> [--no-upload] [--squads]   (in development)
 
               EXAMPLES
                 Launch a replay already on disk:
@@ -203,6 +247,12 @@ public sealed class CommandLineOptions
                     --unregister-protocol Remove it.
                     --register-target <p> Register a specific exe path instead of this one.
                     --config <path>       Use a specific config.json.
+                    --dump <game-id>      Dump this game (in development): start the replay,
+                                          read the map from the game's console and send the
+                                          rows to Paladin. --no-upload keeps them local;
+                                          --squads also prints the squads. Parsed only in
+                                          this build; the run itself is not implemented yet.
+                    --dump-upload <dir>   Send the rows an earlier dump kept (in development).
                 -y, --yes                 Answer prompts automatically (for scripts).
                 -v, --verbose             Echo the full log to the console.
                     --version             Print the version and exit.

@@ -8,5 +8,6 @@ ShieldTests.Register();
 SessionTests.Register();
 ReplayAndLaunchTests.Register();
 PathDisplayTests.Register();
+DumpTests.Register();
 
 return TestHarness.Run();

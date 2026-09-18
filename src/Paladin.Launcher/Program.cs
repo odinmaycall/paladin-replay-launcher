@@ -108,6 +108,10 @@ internal static class Program
                 case Command.Launch:
                     return await RunLaunch(options, config, log, ui, store);
 
+                case Command.Dump:
+                case Command.DumpUpload:
+                    return RunDumpStub(options, ui);
+
                 default:
                     CommandLineOptions.PrintUsage();
                     return ExitCodes.BadArguments;
@@ -157,6 +161,50 @@ internal static class Program
         return await runner.RunAsync(request, cts.Token);
     }
 
+    /// <summary>
+    /// "Dump this game" (§717). Pass A ships the no-game core — Paladin.Core/Dump and
+    /// this parsing — and nothing that touches the window, the keyboard or the game;
+    /// the run itself is pass B. Until then the command is understood, checked as far
+    /// as it can be, and refused, so an installed 0.3.x never launches a replay it was
+    /// asked to dump.
+    /// </summary>
+    private static int RunDumpStub(CommandLineOptions options, IShieldUi ui)
+    {
+        if (options.Command == Command.Dump)
+        {
+            if (options.NoDev)
+            {
+                // F12: the console only exists under -dev.
+                ui.Fail("A dump needs the -dev launch; remove --no-dev.");
+                return ExitCodes.BadArguments;
+            }
+
+            if (options.PaladinUri is not null)
+            {
+                var parsed = PaladinUri.Parse(options.PaladinUri);
+                if (!parsed.Ok)
+                {
+                    ui.Fail($"That paladin:// link could not be used: {parsed.Error}");
+                    return ExitCodes.BadArguments;
+                }
+            }
+            else if (options.DumpGameId is null)
+            {
+                ui.Fail($"--dump needs the game's id (up to 15 digits), got '{options.DumpGameInput ?? ""}'.");
+                return ExitCodes.BadArguments;
+            }
+        }
+        else if (string.IsNullOrWhiteSpace(options.DumpUploadPath))
+        {
+            ui.Fail("--dump-upload needs the folder an earlier dump kept its rows in.");
+            return ExitCodes.BadArguments;
+        }
+
+        ui.Fail("dump: not yet implemented (pass B)");
+        ui.Note("This build parses the command and the paladin://dump link; the run lands in the next release.");
+        return ExitCodes.NotImplemented;
+    }
+
     private static ReplayRequest? ResolveRequest(CommandLineOptions options, IShieldUi ui)
     {
         if (options.PaladinUri is not null)
@@ -165,6 +213,12 @@ internal static class Program
             if (!parsed.Ok)
             {
                 ui.Fail($"That paladin:// link could not be used: {parsed.Error}");
+                return null;
+            }
+            if (parsed.IsDump)
+            {
+                // Routed to RunDumpStub by the command line; this guards the day that routing changes.
+                ui.Fail("That is a paladin://dump link, not a replay to watch.");
                 return null;
             }
             return parsed.Request;

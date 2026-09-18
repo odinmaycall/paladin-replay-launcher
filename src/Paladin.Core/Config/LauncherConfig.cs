@@ -162,6 +162,46 @@ public sealed class LauncherConfig
     /// <summary>Sessions kept on disk regardless, newest first, for post-mortem.</summary>
     public int KeepRecentSessions { get; set; } = 10;
 
+    // ---- Dump this game (§717) -----------------------------------------------------------
+    //
+    // The knobs of the dump run. The pauses are the kit's measured ones (console-dump.ahk
+    // 60, 92, 94; launch-and-dump.ps1 203-204, 213, 237, 245); the rest are the design's
+    // decisions. Nothing here is read until pass B; pass A ships the shape so a tester's
+    // config.json can already carry it.
+
+    /// <summary>
+    /// Where the printed rows go: POST &lt;base&gt;&lt;gameId&gt;. Never taken from a link. Point it
+    /// at http://localhost:8787/api/world/ for a `wrangler dev` Worker.
+    /// </summary>
+    public string DumpUploadBaseUrl { get; set; } = "https://paladin.odinmaycall.com/api/world/";
+
+    /// <summary>F1: no "GAME -- Starting mission:" within this long is a failed start (custom-map tournament games).</summary>
+    public int DumpMissionTimeoutSeconds { get; set; } = 180;
+
+    /// <summary>Indices per PD2 chunk; 200 prints in about 3 s.</summary>
+    public int DumpChunkSize { get; set; } = 200;
+
+    /// <summary>D1: after quit() is typed, how long the game gets to close by itself before it is ended.</summary>
+    public int DumpCloseGraceSeconds { get; set; } = 15;
+
+    /// <summary>D1: end RelicCardinal after the grace (true), or leave the game for the user to close.</summary>
+    public bool DumpEndProcess { get; set; } = true;
+
+    /// <summary>After the console chord, before the first paste.</summary>
+    public int DumpChordSettleMs { get; set; } = 1200;
+    /// <summary>After Ctrl+V, before Return.</summary>
+    public int DumpAfterPasteMs { get; set; } = 800;
+    /// <summary>After Return, before the next line.</summary>
+    public int DumpAfterEnterMs { get; set; } = 600;
+    /// <summary>After "Starting mission", before the console is opened.</summary>
+    public int DumpHudSettleMs { get; set; } = 3000;
+    /// <summary>How long HELLO gets to print after the chord and the paste.</summary>
+    public int DumpHelloWaitSeconds { get; set; } = 6;
+    /// <summary>How long the PALADIN2_DEF sentinel gets after the last ladder line.</summary>
+    public int DumpDefWaitSeconds { get; set; } = 8;
+    /// <summary>How long one PD2 chunk's DONE line gets.</summary>
+    public int DumpChunkWaitSeconds { get; set; } = 30;
+
     // ---- Overrides for when auto-detection fails -----------------------------------------
 
     public string? SteamExeOverride { get; set; }

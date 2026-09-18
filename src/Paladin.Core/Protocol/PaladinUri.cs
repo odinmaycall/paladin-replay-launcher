@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Web;
 using Paladin.Core.Replay;
 
@@ -11,6 +12,10 @@ namespace Paladin.Core.Protocol;
 ///   paladin://replay?path=C%3A%5Ctemp%5Cgame.rec
 ///   paladin://replay/&lt;match-id&gt;                  -> provider "aoe4replays" (not yet implemented)
 ///   paladin://replay?id=&lt;match-id&gt;&amp;source=aoe4replays
+///   paladin://dump?game=&lt;id&gt;&amp;url=...&amp;url=...        -> "Dump this game" (§717): the replay
+///                                                    as for replay, plus the game id the rows
+///                                                    are sent under. The upload target never
+///                                                    travels in the link; it is config.
 ///
 /// Parsing is deliberately strict and lives in Paladin.Core so it is unit tested
 /// without a registered protocol handler. Everything arriving here comes from a
@@ -19,16 +24,52 @@ namespace Paladin.Core.Protocol;
 public static class PaladinUri
 {
     public const string Scheme = "paladin";
+    public const string ReplayAction = "replay";
+    public const string DumpAction = "dump";
 
-    public sealed record ParseResult(bool Ok, ReplayRequest? Request, string? Error)
+    /// <summary>A Paladin game id is a positive number of at most this many digits (the Worker's route is \d{1,15}).</summary>
+    public const int MaxGameIdDigits = 15;
+
+    /// <param name="Action">"replay" or "dump" when Ok.</param>
+    /// <param name="GameId">The game the rows are sent under; only a dump link carries one.</param>
+    public sealed record ParseResult(bool Ok, ReplayRequest? Request, string? Error, string? Action = null, long? GameId = null)
     {
         public static ParseResult Fail(string error) => new(false, null, error);
-        public static ParseResult Success(ReplayRequest request) => new(true, request, null);
+        public static ParseResult Success(ReplayRequest request, string action = ReplayAction, long? gameId = null) =>
+            new(true, request, null, action, gameId);
+
+        public bool IsDump => Ok && Action == DumpAction;
     }
 
     public static bool LooksLikePaladinUri(string argument) =>
         argument.StartsWith(Scheme + "://", StringComparison.OrdinalIgnoreCase) ||
         argument.StartsWith(Scheme + ":", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The link's action ("replay", "dump", ...) lower-cased, or null when the argument
+    /// is not a well-formed paladin link. Lets the command line route a bare link to
+    /// the right command before the full parse.
+    /// </summary>
+    public static string? ActionOf(string raw)
+    {
+        raw = raw.Trim().Trim('"');
+        if (!LooksLikePaladinUri(raw) || !Uri.TryCreate(raw, UriKind.Absolute, out var uri)) return null;
+        if (!string.Equals(uri.Scheme, Scheme, StringComparison.OrdinalIgnoreCase)) return null;
+        var action = uri.Host;
+        if (string.IsNullOrEmpty(action))
+            action = uri.AbsolutePath.Trim('/').Split('/').FirstOrDefault() ?? "";
+        return action.Length == 0 ? null : action.ToLowerInvariant();
+    }
+
+    /// <summary>Digits only, 1 to <see cref="MaxGameIdDigits"/> of them, greater than zero. No sign, no spaces, no separators.</summary>
+    public static bool TryParseGameId(string? text, out long gameId)
+    {
+        gameId = 0;
+        if (string.IsNullOrEmpty(text) || text.Length > MaxGameIdDigits) return false;
+        foreach (var c in text)
+            if (c is < '0' or > '9') return false;
+        return long.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out gameId) && gameId > 0;
+    }
 
     public static ParseResult Parse(string raw)
     {
@@ -47,10 +88,26 @@ public static class PaladinUri
         if (string.IsNullOrEmpty(action))
             action = uri.AbsolutePath.Trim('/').Split('/').FirstOrDefault() ?? "";
 
-        if (!string.Equals(action, "replay", StringComparison.OrdinalIgnoreCase))
-            return ParseResult.Fail($"Unsupported paladin action '{action}'. Only 'replay' is implemented.");
+        var isReplay = string.Equals(action, ReplayAction, StringComparison.OrdinalIgnoreCase);
+        var isDump = string.Equals(action, DumpAction, StringComparison.OrdinalIgnoreCase);
+        if (!isReplay && !isDump)
+            return ParseResult.Fail($"Unsupported paladin action '{action}'. Only '{ReplayAction}' and '{DumpAction}' are implemented.");
 
+        var actionName = isDump ? DumpAction : ReplayAction;
         var query = HttpUtility.ParseQueryString(uri.Query);
+
+        // A dump is keyed by the game id the rows are sent under. It is digits or nothing:
+        // a repeated game= (joined with a comma by ParseQueryString) or anything else is refused.
+        long? gameId = null;
+        if (isDump)
+        {
+            var game = query["game"];
+            if (!TryParseGameId(game, out var id))
+                return ParseResult.Fail(game is null
+                    ? $"A {DumpAction} link needs game=<id>."
+                    : $"'{game}' is not a game id (1 to {MaxGameIdDigits} digits).");
+            gameId = id;
+        }
 
         // A link may carry several `url` values. HttpUtility joins repeats with commas,
         // so they are split back apart here. Order is priority order.
@@ -79,7 +136,7 @@ public static class PaladinUri
                 Value = accepted[0],
                 Fallbacks = accepted.Skip(1).ToList(),
                 SuggestedName = NullIfBlank(query["name"]),
-            });
+            }, actionName, gameId);
         }
 
         var path = query["path"];
@@ -90,24 +147,28 @@ public static class PaladinUri
                 Kind = "local",
                 Value = path,
                 SuggestedName = NullIfBlank(query["name"]),
-            });
+            }, actionName, gameId);
         }
 
-        var id = query["id"];
-        if (string.IsNullOrWhiteSpace(id))
+        // A dump needs a replay it can fetch or find; the archive-id form has no provider.
+        if (isDump)
+            return ParseResult.Fail($"A {DumpAction} link needs the replay's 'url' or 'path'.");
+
+        var id2 = query["id"];
+        if (string.IsNullOrWhiteSpace(id2))
         {
             // paladin://replay/<match-id>
             var segments = uri.AbsolutePath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
-            if (segments.Length > 0) id = segments[^1];
+            if (segments.Length > 0) id2 = segments[^1];
         }
 
-        if (!string.IsNullOrWhiteSpace(id))
+        if (!string.IsNullOrWhiteSpace(id2))
         {
             var source = NullIfBlank(query["source"]) ?? "aoe4replays";
             return ParseResult.Success(new ReplayRequest
             {
                 Kind = source,
-                Value = id,
+                Value = id2,
                 SuggestedName = NullIfBlank(query["name"]),
             });
         }
@@ -130,6 +191,11 @@ public static class PaladinUri
         source is null
             ? $"{Scheme}://replay/{Uri.EscapeDataString(matchId)}"
             : $"{Scheme}://replay?id={Uri.EscapeDataString(matchId)}&source={Uri.EscapeDataString(source)}";
+
+    /// <summary>paladin://dump?game=&lt;id&gt;&amp;url=...&amp;url=... — what the site's "Dump this game" button emits (§717 §4.1).</summary>
+    public static string BuildDumpLink(long gameId, IEnumerable<string> replayUrls) =>
+        $"{Scheme}://{DumpAction}?game={gameId.ToString(CultureInfo.InvariantCulture)}&"
+        + string.Join("&", replayUrls.Select(u => $"url={Uri.EscapeDataString(u)}"));
 
     private static string? NullIfBlank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
 }

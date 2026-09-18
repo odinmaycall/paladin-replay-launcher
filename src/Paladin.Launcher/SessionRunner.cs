@@ -546,4 +546,7 @@ public static class ExitCodes
     public const int Cancelled = 7;
     public const int BadArguments = 8;
     public const int UnexpectedError = 9;
+    // 10-18 are reserved for the dump failures of §717 §2.5 (pass B).
+    /// <summary>The command is parsed and understood but this build cannot run it yet.</summary>
+    public const int NotImplemented = 19;
 }

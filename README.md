@@ -111,6 +111,8 @@ Windows dependencies and would port more or less directly.
     Logging/PaladinLog        line logger, console + file
     Model/                    SessionRecord, FileSnapshot, FileChange, RestoreResult
     Protocol/PaladinUri       paladin:// parsing and link building
+    Dump/                     "Dump this game" (in development): the console Lua,
+                              log classification, evidence, envelope, uploader
     Replay/                   IReplayProvider + Local, DirectUrl, registry, validator
     Shield/                   PathGlob, ProtectionPolicy, Snapshot, ChangeDetector,
                               RestoreService, SessionStore, RecoveryTriage
@@ -122,7 +124,7 @@ Windows dependencies and would port more or less directly.
     SessionRunner             the ordered pipeline
     RecoveryRunner            crash recovery
     Program / CommandLineOptions / ShieldUi
-  tests/Paladin.Tests/        net10.0 — 73 tests, zero packages
+  tests/Paladin.Tests/        net10.0 — 168 tests, zero packages
   web/paladin-test.html       local link-test page
 ```
 
@@ -230,6 +232,15 @@ Install it (per-user, no admin) — do this once:
 ```bash
 publish\PaladinReplayLauncher.exe --install
 ```
+
+### Dump (in development)
+
+`--dump <game-id> [--no-upload] [--squads]`, `--dump-upload <folder>` and the
+`paladin://dump?game=<id>&url=...` link are parsed by this build and refused with
+"dump: not yet implemented (pass B)". They will start a replay, read the map's objects
+from the game's own developer console and send those rows to Paladin so the match page
+gets its World layer. The no-game core (`src/Paladin.Core/Dump`) is in and tested; the
+part that drives the game is not, and the network policy above is unchanged until it is.
 
 ## Installing, and why it stays working
 
@@ -552,15 +563,17 @@ paladin://replay?url=https%3A%2F%2Fexample.com%2Fgame.rec     -> DirectUrlReplay
 paladin://replay?path=C%3A%5Creplays%5Cgame.rec               -> LocalReplayProvider
 paladin://replay/244989270                                    -> archive provider (not built)
 paladin://replay?id=244989270&source=relic                    -> named provider
+paladin://dump?game=246737201&url=...&url=...                 -> dump (parsed; not yet run)
 ```
 
 Registration writes to `HKCU\Software\Classes\paladin`, so it needs no administrator
 rights. `--unregister-protocol` removes it. If the exe moves, re-run
 `--register-protocol` from the new location.
 
-Everything arriving through a link is untrusted: only `replay` is a valid action, only
-http/https URLs are accepted, and a downloaded file name is stripped of any directory
-component before use.
+Everything arriving through a link is untrusted: only `replay` and `dump` are valid
+actions, only http/https URLs are accepted, a dump's `game` must be a plain number, the
+upload target never comes from a link, and a downloaded file name is stripped of any
+directory component before use.
 
 `web/paladin-test.html` is a local page with WATCH REPLAY buttons for each form. Open it
 from disk; it is a test fixture, not part of the Paladin site.
