@@ -15,7 +15,74 @@ internal static class Program
 {
     private const string AppFolderName = "PaladinReplayLauncher";
 
+    /**
+     * The window must not vanish before the outcome has been read.
+     *
+     * Started from a paladin:// link the process OWNS the console window Windows opened for it, so
+     * the window closes the instant Main returns. Every fast outcome therefore looks identical to
+     * the reader: a black window that flashes and is gone. The owner reported it twice - first on
+     * "Dump this game" against launcher 0.3.0, which answered "Unsupported paladin action 'dump'"
+     * and exited, and again on "Dump, then watch", which correctly refused a game that already had
+     * its world layer. Neither was a crash and neither could be read.
+     *
+     * So the outcome is held on screen, but ONLY where a human is there to dismiss it. The dump
+     * queue runs this exe unattended for hours (the Shield, as --observe --yes with its output
+     * redirected), and a blocking read there would hang the night.
+     */
     private static async Task<int> Main(string[] rawArgs)
+    {
+        var exitCode = await RunAsync(rawArgs);
+        HoldWindowIfItIsOurs(rawArgs, exitCode);
+        return exitCode;
+    }
+
+    /// <summary>Only this process is attached to the console: the window is ours and dies with us.</summary>
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+    private static extern uint GetConsoleProcessList(uint[] processList, uint count);
+
+    private static bool OwnsItsConsoleWindow()
+    {
+        try
+        {
+            var buffer = new uint[4];
+            return GetConsoleProcessList(buffer, (uint)buffer.Length) == 1;
+        }
+        catch
+        {
+            // No console at all, or the call is unavailable: either way we are not the one closing a window.
+            return false;
+        }
+    }
+
+    private static void HoldWindowIfItIsOurs(string[] rawArgs, int exitCode)
+    {
+        // Redirected streams mean a caller is reading us - the queue, a script, a test harness.
+        if (Console.IsOutputRedirected || Console.IsInputRedirected) return;
+        foreach (var a in rawArgs)
+        {
+            // The unattended flags, belt and braces behind the redirect test above.
+            if (string.Equals(a, "--yes", StringComparison.OrdinalIgnoreCase)) return;
+            if (string.Equals(a, "--observe", StringComparison.OrdinalIgnoreCase)) return;
+        }
+        // Launched from an existing console (a developer typing into PowerShell): that window is the
+        // caller's and stays open by itself, so there is nothing to hold.
+        if (!OwnsItsConsoleWindow()) return;
+
+        Console.WriteLine();
+        Console.WriteLine(exitCode == ExitCodes.Ok
+            ? "  Finished. Press Enter to close this window."
+            : $"  This run did not finish (exit code {exitCode}). The reason is above. Press Enter to close this window.");
+        try
+        {
+            Console.ReadLine();
+        }
+        catch
+        {
+            // A console that cannot be read from is one nobody is watching; closing is right.
+        }
+    }
+
+    private static async Task<int> RunAsync(string[] rawArgs)
     {
         Console.OutputEncoding = System.Text.Encoding.UTF8;
 
