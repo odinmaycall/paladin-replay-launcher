@@ -1,7 +1,22 @@
-# Paladin Replay Launcher 0.4.0
+# Paladin Replay Launcher 0.4.1
 
 Opens an Age of Empires IV replay and puts your game settings back exactly as they were
 afterwards.
+
+## New in 0.4.1
+
+- **The window stays until you have read it.** Started from a `paladin://` link the launcher
+  owns the console window Windows opens for it, so the window closed the instant the run
+  returned. Every fast outcome therefore looked the same: a black window that flashed and
+  was gone. It bit twice — once on "Dump this game" against an older launcher, which
+  answered "Unsupported paladin action 'dump'" and exited, and once on "Dump, then watch",
+  which was not broken at all and was correctly refusing a game that already had its world
+  layer. Neither could be read. The launcher now holds the window after printing, and waits
+  for Enter.
+- **Only where somebody is there to close it.** The hold is skipped when either stream is
+  redirected, when `--yes` or `--observe` is passed, and when the console belongs to a shell
+  you already had open. An unattended queue runs this program for hours as the Shield, and a
+  blocking read there would hang the night.
 
 ## New in 0.4.0
 
