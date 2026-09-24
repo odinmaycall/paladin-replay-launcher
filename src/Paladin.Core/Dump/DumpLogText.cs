@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text.RegularExpressions;
 
 namespace Paladin.Core.Dump;
@@ -49,6 +49,22 @@ public static class DumpLogText
     /// <summary>The design's anchor: PALADIN2 (an entity row) or any PALADIN2_*/PALADIN3_* marker, at the start of the message.</summary>
     private static readonly Regex MarkerAtStart =
         new(@"^(PALADIN2|PALADIN[23]_[A-Z_]+)\|", RegexOptions.Compiled);
+
+    /// <summary>
+    /// §842 — THE DEEP SAMPLER'S OWN MARKERS, which <see cref="MarkerAtStart"/> does not admit.
+    ///
+    /// That alternation accepts only a literal PALADIN2, or PALADIN followed by 2 or 3. The Deep
+    /// sampler prints PALADIN5_VA rows, so a Deep run reusing the dump's filter keeps the framing and
+    /// ZERO rows — and says nothing about it, because the sampler's completion sentinel is
+    /// PALADIN3_SQDEF, which DOES match, so the ladder is judged a success.
+    ///
+    /// The site's receiving end is already written against this shape: src/lib/deepCapture.ts uses
+    /// /PALADIN[567]_[A-Z0-9_]*\|/ and src/lib/deepCapture.test.ts asserts that the dump filter above
+    /// drops these rows today. 5, 6 and 7 are admitted together so a later sampler revision does not
+    /// need this file edited again.
+    /// </summary>
+    private static readonly Regex DeepMarkerAtStart =
+        new(@"^(PALADIN[567]_[A-Z0-9_]+)\|", RegexOptions.Compiled);
 
     private static readonly Regex Env =
         new(@"^PALADIN3_ENV\|([^|]*)\|([^|]*)\|([^|]*)$", RegexOptions.Compiled);
@@ -135,6 +151,24 @@ public static class DumpLogText
 
     /// <summary>True when the line carries any PALADIN marker at its anchor: the lines the evidence keeps.</summary>
     public static bool IsPaladinLine(string? raw) => Marker(raw) is not null;
+
+    /// <summary>§842 — the Deep marker that starts the message ("PALADIN5_VA", "PALADIN5_VA_BEGIN" ...), or null.</summary>
+    public static string? DeepMarker(string? raw)
+    {
+        if (!TryParse(raw, out var line)) return null;
+        var m = DeepMarkerAtStart.Match(line.Message);
+        return m.Success ? m.Groups[1].Value : null;
+    }
+
+    /// <summary>§842 — True for a Deep sampler line (PALADIN5_*, and 6/7 reserved for later samplers).</summary>
+    public static bool IsDeepLine(string? raw) => DeepMarker(raw) is not null;
+
+    /// <summary>
+    /// §842 — Every line a DEEP capture keeps: the sampler's own rows AND the ladder framing the
+    /// dump already knows, because the sampler ends on PALADIN3_SQDEF and the session's PALADIN3_HELLO
+    /// and PALADIN3_ENV are the same evidence they are for a dump.
+    /// </summary>
+    public static bool IsDeepEvidenceLine(string? raw) => IsDeepLine(raw) || IsPaladinLine(raw);
 
     /// <summary>True for a printed entity row (PALADIN2|...).</summary>
     public static bool IsEntityRow(string? raw) => Marker(raw) == "PALADIN2";

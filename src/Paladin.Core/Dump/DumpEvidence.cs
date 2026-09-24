@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using System.Text.RegularExpressions;
 
 namespace Paladin.Core.Dump;
@@ -195,6 +195,16 @@ public sealed class DumpEvidence
     /// <summary>Every line whose anchored marker is a PALADIN one, verbatim with its clock prefix.</summary>
     public static IReadOnlyList<string> PaladinLines(string? sessionText) =>
         DumpLogText.Lines(sessionText).Where(DumpLogText.IsPaladinLine).ToList();
+
+    /// <summary>
+    /// §842 — Every line a DEEP capture's evidence keeps, verbatim with its clock prefix.
+    ///
+    /// Separate from <see cref="PaladinLines"/> rather than a widening of it: a world dump must not
+    /// start carrying sampler rows if a sampler ever runs beside one, and a Deep capture must not be
+    /// judged by the dump's own row expectations.
+    /// </summary>
+    public static IReadOnlyList<string> DeepLines(string? sessionText) =>
+        DumpLogText.Lines(sessionText).Where(DumpLogText.IsDeepEvidenceLine).ToList();
 
     /// <summary>The first line that must not leave the machine, or null. What the Worker's personal_lines check (§5.2) refuses, applied here first.</summary>
     public static string? PersonalLine(IEnumerable<string> lines) =>
