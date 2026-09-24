@@ -1156,7 +1156,11 @@ public static class DumpTests
             Equal(PaladinUri.ReplayAction, shortForm.Action);
 
             False(PaladinUri.Parse("paladin://install?url=https%3A%2F%2Fe.com%2Fx").Ok, "an unknown action is still refused");
-            True(PaladinUri.Parse("paladin://install?url=https%3A%2F%2Fe.com%2Fx").Error!.Contains("'replay' and 'dump'", StringComparison.Ordinal), "and the message names both");
+            // §867 added 'deep', so the refusal names three actions now, not two.
+            var unknown = PaladinUri.Parse("paladin://install?url=https%3A%2F%2Fe.com%2Fx").Error!;
+            True(unknown.Contains("'replay'", StringComparison.Ordinal), "the message names replay");
+            True(unknown.Contains("'dump'", StringComparison.Ordinal), "the message names dump");
+            True(unknown.Contains("'deep'", StringComparison.Ordinal), "and the message names deep");
         });
 
         Test("the action is readable before the full parse, so the command line can route a bare link", () =>

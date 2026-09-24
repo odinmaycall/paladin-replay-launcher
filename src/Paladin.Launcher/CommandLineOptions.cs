@@ -1,4 +1,4 @@
-using Paladin.Core.Protocol;
+﻿using Paladin.Core.Protocol;
 
 namespace Paladin.Launcher;
 
@@ -9,6 +9,8 @@ public enum Command { Launch, Observe, Recover, Doctor, Install, Uninstall, Regi
     Dump,
     /// <summary>Send an earlier dump's kept rows: --dump-upload &lt;evidence folder&gt;.</summary>
     DumpUpload,
+    /// <summary>§867 "Deep Capture": --deep &lt;gameId&gt; or a paladin://deep link. The one capture a normal user starts.</summary>
+    Deep,
 }
 
 public sealed class CommandLineOptions
@@ -62,9 +64,10 @@ public sealed class CommandLineOptions
             if (Paladin.Core.Protocol.PaladinUri.LooksLikePaladinUri(arg))
             {
                 options.PaladinUri = arg;
-                options.Command = string.Equals(
-                    Paladin.Core.Protocol.PaladinUri.ActionOf(arg), Paladin.Core.Protocol.PaladinUri.DumpAction, StringComparison.Ordinal)
-                    ? Command.Dump
+                var linkAction = Paladin.Core.Protocol.PaladinUri.ActionOf(arg);
+                options.Command =
+                    string.Equals(linkAction, Paladin.Core.Protocol.PaladinUri.DeepAction, StringComparison.Ordinal) ? Command.Deep
+                    : string.Equals(linkAction, Paladin.Core.Protocol.PaladinUri.DumpAction, StringComparison.Ordinal) ? Command.Dump
                     : Command.Launch;
                 continue;
             }
@@ -81,6 +84,15 @@ public sealed class CommandLineOptions
                     options.DumpGameInput = Next(args, ref i);
                     options.DumpGameId = Paladin.Core.Protocol.PaladinUri.TryParseGameId(options.DumpGameInput, out var gameId) ? gameId : null;
                     options.Command = Command.Dump;
+                    dumpSeen = true;
+                    break;
+
+                case "--deep":
+                    // §867 — the same shape as --dump, because it names the same two things: a game and
+                    // a replay. Everything that differs happens after the launch.
+                    options.DumpGameInput = Next(args, ref i);
+                    options.DumpGameId = Paladin.Core.Protocol.PaladinUri.TryParseGameId(options.DumpGameInput, out var deepGameId) ? deepGameId : null;
+                    options.Command = Command.Deep;
                     dumpSeen = true;
                     break;
 

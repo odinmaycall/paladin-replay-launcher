@@ -27,6 +27,13 @@ public static class PaladinUri
     public const string ReplayAction = "replay";
     public const string DumpAction = "dump";
 
+    /// <summary>
+    /// §867 — "Deep Capture": paladin://deep?game=&lt;id&gt;&amp;url=... It carries exactly what a dump link
+    /// carries, because it needs exactly the same things — the replay to play and the game the result is
+    /// stored under. What differs is entirely on this side of the link.
+    /// </summary>
+    public const string DeepAction = "deep";
+
     /// <summary>A Paladin game id is a positive number of at most this many digits (the Worker's route is \d{1,15}).</summary>
     public const int MaxGameIdDigits = 15;
 
@@ -48,6 +55,12 @@ public static class PaladinUri
             new(true, request, null, action, gameId, thenWatch);
 
         public bool IsDump => Ok && Action == DumpAction;
+
+        /// <summary>§867 — a Deep Capture link.</summary>
+        public bool IsDeep => Ok && Action == DeepAction;
+
+        /// <summary>Either of the two forms that name a game and capture it.</summary>
+        public bool IsCapture => IsDump || IsDeep;
     }
 
     public static bool LooksLikePaladinUri(string argument) =>
@@ -99,22 +112,23 @@ public static class PaladinUri
 
         var isReplay = string.Equals(action, ReplayAction, StringComparison.OrdinalIgnoreCase);
         var isDump = string.Equals(action, DumpAction, StringComparison.OrdinalIgnoreCase);
-        if (!isReplay && !isDump)
-            return ParseResult.Fail($"Unsupported paladin action '{action}'. Only '{ReplayAction}' and '{DumpAction}' are implemented.");
+        var isDeep = string.Equals(action, DeepAction, StringComparison.OrdinalIgnoreCase);
+        if (!isReplay && !isDump && !isDeep)
+            return ParseResult.Fail($"Unsupported paladin action '{action}'. Only '{ReplayAction}', '{DumpAction}' and '{DeepAction}' are implemented.");
 
-        var actionName = isDump ? DumpAction : ReplayAction;
+        var actionName = isDeep ? DeepAction : isDump ? DumpAction : ReplayAction;
         var query = HttpUtility.ParseQueryString(uri.Query);
 
         // A dump is keyed by the game id the rows are sent under. It is digits or nothing:
         // a repeated game= (joined with a comma by ParseQueryString) or anything else is refused.
         long? gameId = null;
         var thenWatch = false;
-        if (isDump)
+        if (isDump || isDeep)
         {
             var game = query["game"];
             if (!TryParseGameId(game, out var id))
                 return ParseResult.Fail(game is null
-                    ? $"A {DumpAction} link needs game=<id>."
+                    ? $"A {actionName} link needs game=<id>."
                     : $"'{game}' is not a game id (1 to {MaxGameIdDigits} digits).");
             gameId = id;
 
@@ -164,9 +178,9 @@ public static class PaladinUri
             }, actionName, gameId, thenWatch);
         }
 
-        // A dump needs a replay it can fetch or find; the archive-id form has no provider.
-        if (isDump)
-            return ParseResult.Fail($"A {DumpAction} link needs the replay's 'url' or 'path'.");
+        // A capture needs a replay it can fetch or find; the archive-id form has no provider.
+        if (isDump || isDeep)
+            return ParseResult.Fail($"A {actionName} link needs the replay's 'url' or 'path'.");
 
         var id2 = query["id"];
         if (string.IsNullOrWhiteSpace(id2))

@@ -3,4 +3,12 @@
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Paladin.Core</RootNamespace>
   </PropertyGroup>
+  <ItemGroup>
+    <!--
+      §867 — the Deep sampler's definition lines, verbatim. Embedded rather than retyped into C# string
+      literals: a silent transcription error in a Lua definition would look exactly like the dropped
+      paste line DeepLadder exists to catch.
+    -->
+    <EmbeddedResource Include="Deep\sampler-v5.txt" />
+  </ItemGroup>
 </Project>

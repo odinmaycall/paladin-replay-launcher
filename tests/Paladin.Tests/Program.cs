@@ -11,5 +11,10 @@ PathDisplayTests.Register();
 DumpTests.Register();
 DumpRunTests.Register();
 DeepEvidenceTests.Register();
+DeepLadderTests.Register();
+DeepSelfCheckTests.Register();
+DeepEnvelopeTests.Register();
+DeepPreflightTests.Register();
+DeepCommandTests.Register();
 
 return TestHarness.Run();

@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 using System.Runtime.Versioning;
 using Paladin.Core.Config;
 using Paladin.Core.Dump;
@@ -179,6 +179,9 @@ internal static class Program
                 case Command.Dump:
                     return await RunDump(options, config, log, ui, store);
 
+                case Command.Deep:
+                    return await RunDeep(options, config, log, ui, store);
+
                 case Command.DumpUpload:
                     return await RunDumpUpload(options, config, log, ui, store);
 
@@ -305,14 +308,53 @@ internal static class Program
         return await runner.ReSendAsync(options.DumpUploadPath, cts.Token);
     }
 
+    /// <summary>
+    /// §867 — "Deep Capture": play the replay and read what every villager is doing, then send that to
+    /// Paladin. The request is resolved exactly as a dump's is — the two links name the same two things —
+    /// and Ctrl+C routes into the restore the same way.
+    /// </summary>
+    private static async Task<int> RunDeep(
+        CommandLineOptions options, LauncherConfig config, PaladinLog log, IShieldUi ui, SessionStore store)
+    {
+        new RecoveryRunner(config, log, ui, store).RunPending(interactive: !options.AssumeYes);
+
+        var request = ResolveDumpRequest(options, config, log, ui, PaladinUri.DeepAction);
+        if (request is null) return ExitCodes.BadArguments;
+
+        var providers = new ReplayProviderRegistry()
+            .Register(new LocalReplayProvider(log))
+            .Register(new DirectUrlReplayProvider(log));
+
+        if (!providers.Providers.Any(p => p.CanHandle(request.Replay)))
+        {
+            ui.Fail($"No replay provider handles '{request.Replay.Kind}' yet, so this game cannot be captured.");
+            ui.Note($"Available now: {string.Join(", ", providers.Providers.Select(p => p.Id))}.");
+            return ExitCodes.ReplayUnavailable;
+        }
+
+        var runner = new DeepRunner(config, log, ui, store, providers, AppVersion()) { DryRun = options.DryRun };
+
+        using var cts = new CancellationTokenSource();
+        Console.CancelKeyPress += (_, e) =>
+        {
+            e.Cancel = true;
+            ui.Warn(runner.SessionStarted
+                ? "Stopping — Paladin Shield will still check and restore your settings."
+                : "Stopping — nothing has been launched, so there is nothing to put back.");
+            cts.Cancel();
+        };
+
+        return await runner.RunAsync(request, cts.Token);
+    }
+
     /// <summary>The dump's request, from a paladin://dump link or from --dump &lt;id&gt; with a replay.</summary>
     private static DumpRequest? ResolveDumpRequest(
-        CommandLineOptions options, LauncherConfig config, PaladinLog log, IShieldUi ui)
+        CommandLineOptions options, LauncherConfig config, PaladinLog log, IShieldUi ui, string action = PaladinUri.DumpAction)
     {
         if (options.NoDev)
         {
             // F12: the developer console only exists under -dev.
-            ui.Fail("A dump needs the -dev launch; remove --no-dev.");
+            ui.Fail($"A {(action == PaladinUri.DeepAction ? "Deep Capture" : "dump")} needs the -dev launch; remove --no-dev.");
             return null;
         }
 
@@ -328,9 +370,9 @@ internal static class Program
                 ui.Fail($"That paladin:// link could not be used: {parsed.Error}");
                 return null;
             }
-            if (!parsed.IsDump || parsed.GameId is null || parsed.Request is null)
+            if (parsed.Action != action || parsed.GameId is null || parsed.Request is null)
             {
-                ui.Fail("That is not a paladin://dump link.");
+                ui.Fail($"That is not a paladin://{action} link.");
                 return null;
             }
             gameId = parsed.GameId.Value;
@@ -341,7 +383,7 @@ internal static class Program
         {
             if (options.DumpGameId is not long id)
             {
-                ui.Fail($"--dump needs the game's id (up to {PaladinUri.MaxGameIdDigits} digits), got '{options.DumpGameInput ?? ""}'.");
+                ui.Fail($"--{action} needs the game's id (up to {PaladinUri.MaxGameIdDigits} digits), got '{options.DumpGameInput ?? ""}'.");
                 return null;
             }
             gameId = id;
