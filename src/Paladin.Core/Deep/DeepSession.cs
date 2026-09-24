@@ -69,11 +69,20 @@ public sealed class DeepSession
     /// <summary>How long the capture may go without the clock advancing before it is called stalled.</summary>
     public const int StallSeconds = 300;
 
+    /// <summary>
+    /// §870 — is the game still up? Null means "cannot tell", and the watch then behaves exactly as it
+    /// did: it waits out the stall timeout. capture.ps1 has always checked this; the launcher did not,
+    /// so a replay that ended early sat for five idle minutes before the loop gave up on it.
+    /// </summary>
+    private readonly Func<bool>? _gameIsRunning;
+
     public DeepSession(
         DeepSessionOptions options, IConsoleKeys keys, IDumpLogSource log, IDumpReporter ui, IDeepStore store,
         DeepUploader? uploader = null, PaladinLog? diag = null,
-        Func<TimeSpan, CancellationToken, Task>? delay = null, Func<DateTime>? now = null)
+        Func<TimeSpan, CancellationToken, Task>? delay = null, Func<DateTime>? now = null,
+        Func<bool>? gameIsRunning = null)
     {
+        _gameIsRunning = gameIsRunning;
         _options = options;
         _keys = keys;
         _log = log;
@@ -323,6 +332,7 @@ public sealed class DeepSession
     {
         var best = -1;
         var lastProgress = _now();
+        var started = _now();
         var deadline = _now().AddSeconds(FirstSampleWaitSeconds);
 
         while (!ct.IsCancellationRequested)
@@ -340,11 +350,36 @@ public sealed class DeepSession
             }
 
             if (best >= _options.WindowSeconds) return true;
+
+            // §870 — the game going away is an ANSWER, not something to wait out. Nothing more can be
+            // sampled from a replay that has closed, so the five-minute stall timeout only delays a
+            // verdict the loop could give at once.
+            if (GameHasGoneAway(started)) {
+                _diag?.Warn($"The game is no longer running; stopping the watch at {best}s.");
+                return false;
+            }
+
             if (best < 0 && _now() > deadline) return false;
             if (best >= 0 && (_now() - lastProgress).TotalSeconds > StallSeconds) return false;
         }
         return false;
     }
+
+    private bool GameHasGoneAway(DateTime started) =>
+        _gameIsRunning is not null && ShouldStopForMissingGame(_gameIsRunning(), (_now() - started).TotalSeconds);
+
+    /// <summary>
+    /// §870 — should a watch stop because the game is gone? Pure, so the grace window is testable.
+    ///
+    /// THE GRACE EXISTS BECAUSE THE SIGNAL CAN LIE EARLY. The session begins as soon as the process is
+    /// seen, and a process snapshot taken in the first seconds of a launch can miss a game that is very
+    /// much alive. Nothing is lost by waiting: a replay that really has closed is still noticed in
+    /// seconds rather than after the five-minute stall timeout.
+    /// </summary>
+    public const int GameGoneGraceSeconds = 30;
+
+    public static bool ShouldStopForMissingGame(bool gameRunning, double elapsedSeconds) =>
+        !gameRunning && elapsedSeconds >= GameGoneGraceSeconds;
 
     /// <summary>Put the game back to a running rate. Best effort: the caller is on its way out either way.</summary>
     private async Task ThawAsync(CancellationToken ct)

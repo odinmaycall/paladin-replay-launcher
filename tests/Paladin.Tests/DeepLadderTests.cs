@@ -97,6 +97,21 @@ public static class DeepLadderTests
             True(freeze.Contains("World_GetGameTime", StringComparison.Ordinal), "and the clock it froze at is the evidence it worked");
         });
 
+        Test("§870 — a replay that has closed ends the watch, instead of waiting out the stall timeout", () =>
+        {
+            // capture.ps1 has always checked this; the launcher did not, so a game that ended early sat
+            // for five idle minutes before the loop gave up on what it already had.
+            True(Paladin.Core.Deep.DeepSession.ShouldStopForMissingGame(false, 60), "gone, and past the grace");
+            False(Paladin.Core.Deep.DeepSession.ShouldStopForMissingGame(true, 600), "still running: keep watching");
+        });
+
+        Test("§870 — but an early snapshot is not believed, because it can miss a game that is alive", () =>
+        {
+            False(Paladin.Core.Deep.DeepSession.ShouldStopForMissingGame(false, 0), "the session starts the moment the process is seen");
+            False(Paladin.Core.Deep.DeepSession.ShouldStopForMissingGame(false, Paladin.Core.Deep.DeepSession.GameGoneGraceSeconds - 1), "just inside the grace");
+            True(Paladin.Core.Deep.DeepSession.ShouldStopForMissingGame(false, Paladin.Core.Deep.DeepSession.GameGoneGraceSeconds), "and the grace is inclusive");
+        });
+
         Test("the thaw exists as a line of its own, so a game is never abandoned frozen", () =>
         {
             var thaw = DeepLadder.Thaw;

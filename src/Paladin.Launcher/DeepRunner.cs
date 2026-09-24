@@ -71,7 +71,8 @@ public sealed class DeepRunner
 
         // A capture has to start the game itself: it needs this launch's own session log and the -dev
         // console a normal launch does not have.
-        var running = new GameProcessMonitor(_config.GameProcessNames, env.Aoe4GameExePath, _log).Snapshot();
+        var monitor = new GameProcessMonitor(_config.GameProcessNames, env.Aoe4GameExePath, _log);
+        var running = monitor.Snapshot();
         if (!DryRun && running.Count > 0)
         {
             var failure = DumpFailures.GameAlreadyRunning($"{running.Count} game process(es) are running");
@@ -141,7 +142,9 @@ public sealed class DeepRunner
                         DumpPacing.From(_config), request.Upload),
                     keys, watcher, new ShieldDumpReporter(_ui),
                     new SessionDeepStore(context.SessionDirectory, _log),
-                    uploader, _log);
+                    uploader, _log,
+                    // §870 — so a replay that closes early is noticed in seconds rather than waited out.
+                    gameIsRunning: () => monitor.Snapshot().Count > 0);
 
                 Result = await session.RunAsync(token);
                 return Result.Exit;
