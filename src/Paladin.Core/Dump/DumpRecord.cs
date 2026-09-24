@@ -18,6 +18,13 @@ public static class DumpJson
         PropertyNameCaseInsensitive = true,
         DefaultIgnoreCondition = JsonIgnoreCondition.Never,
         WriteIndented = false,
+        // §868 — A NUMBER MAY ARRIVE QUOTED, and refusing it threw away a capture that had worked.
+        // The Deep route answers `"gameId":"249485354"` where GameId is a long?, so the whole response
+        // failed to deserialise, TryParse returned null, and a 200 "stored" fell through to
+        // "unexpected" — reported to the user as "Paladin did not accept the map: no reason was
+        // given", about an upload the Worker had already stored. This only ever makes the reader more
+        // permissive: nothing that parsed before stops parsing.
+        NumberHandling = JsonNumberHandling.AllowReadingFromString,
     };
 
     /// <summary>The session's dump.json: the same names, indented for a human reading a failure report.</summary>

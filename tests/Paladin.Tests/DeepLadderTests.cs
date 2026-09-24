@@ -213,6 +213,35 @@ public static class DeepPreflightTests
             False(p.AlreadyHeld, "status none means the slot is free and the capture is worth running");
         });
 
+        Test("THE WORKER'S REAL SUCCESS BODY IS READ AS A SUCCESS — this threw away a working capture", () =>
+        {
+            // Verbatim from the first real capture: 11,153 readings, 0:06 to 15:06, stored by the
+            // Worker — and reported to the user as "Paladin did not accept the map". gameId comes back
+            // QUOTED, GameId is a long?, so the whole response failed to deserialise and a 200 "stored"
+            // fell through to "unexpected".
+            var body = "{\"status\":\"stored\",\"gameId\":\"249485354\",\"samples\":181,\"first\":6,\"last\":906,"
+                     + "\"bytes\":45476,\"encoding\":\"gzip\",\"wireBytes\":64764,\"textBytes\":1048898,\"url\":\"/deep/249485354.json\"}";
+            var result = Paladin.Core.Dump.DumpUploader.Classify(200, "OK", body);
+            Equal(Paladin.Core.Dump.DumpUploadOutcome.Stored, result.Outcome, "200 with status stored is a success");
+            True(result.Accepted, "and the launcher must say so");
+        });
+
+        Test("a quoted number anywhere in the answer no longer breaks the whole read", () =>
+        {
+            var parsed = Paladin.Core.Dump.DumpUploadResponse.TryParse("{\"status\":\"stored\",\"gameId\":\"12345\",\"bytes\":\"678\"}");
+            True(parsed is not null, "the response parses");
+            Equal("stored", parsed!.Status!);
+            Equal(12345L, parsed.GameId!.Value);
+        });
+
+        Test("a plain number still parses, so the world dump's own answers are untouched", () =>
+        {
+            var parsed = Paladin.Core.Dump.DumpUploadResponse.TryParse("{\"status\":\"stored\",\"gameId\":12345,\"n\":3202}");
+            True(parsed is not null, "the dump's shape still reads");
+            Equal(12345L, parsed!.GameId!.Value);
+            Equal(3202, parsed.N!.Value);
+        });
+
         Test("a game Paladin already holds is not worth capturing", () =>
         {
             True(DeepUploader.ParsePreflight("{\"status\":\"owner\"}").AlreadyHeld, "Paladin banked this game itself");
