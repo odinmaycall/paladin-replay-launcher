@@ -51,6 +51,24 @@ public static class DumpLogText
         new(@"^(PALADIN2|PALADIN[23]_[A-Z_]+)\|", RegexOptions.Compiled);
 
     /// <summary>
+    /// §868 — ANY Paladin marker at the start of the message, which is a different question from
+    /// <see cref="MarkerAtStart"/>'s.
+    ///
+    /// THIS COST A REAL CAPTURE. The Deep bootstrap prints PALADIN9_FREEZE when it stops game time, and
+    /// <see cref="HasMarker"/> validated every wait against MarkerAtStart — which admits only PALADIN2
+    /// and PALADIN3. So the launcher waited for a line the game had already printed, could not
+    /// structurally recognise it, and gave up on a bootstrap that had worked. The game log says exactly
+    /// that: `PALADIN9_FREEZE|true|0.0|6.625`, twice, and no samples.
+    ///
+    /// MarkerAtStart IS DELIBERATELY NOT WIDENED. §842 keeps it narrow so a world dump's evidence can
+    /// never start carrying sampler rows, and `Marker`/`IsPaladinLine` still answer that narrow
+    /// question. This one exists only to answer "is the thing I am waiting for a marker at all", where
+    /// the caller has already named the exact marker it wants.
+    /// </summary>
+    private static readonly Regex AnyMarkerAtStart =
+        new(@"^(PALADIN2|PALADIN[0-9]_[A-Z0-9_]+)\|", RegexOptions.Compiled);
+
+    /// <summary>
     /// §842 — THE DEEP SAMPLER'S OWN MARKERS, which <see cref="MarkerAtStart"/> does not admit.
     ///
     /// That alternation accepts only a literal PALADIN2, or PALADIN followed by 2 or 3. The Deep
@@ -175,7 +193,7 @@ public static class DumpLogText
 
     /// <summary>True when the message starts with the given marker text, e.g. "PALADIN3_HELLO|" or "PALADIN2_DONE|0|199|".</summary>
     public static bool HasMarker(string? raw, string marker) =>
-        TryParse(raw, out var line) && line.Message.StartsWith(marker, StringComparison.Ordinal) && Marker(raw) is not null;
+        TryParse(raw, out var line) && line.Message.StartsWith(marker, StringComparison.Ordinal) && AnyMarkerAtStart.IsMatch(line.Message);
 
     // ---- detections -----------------------------------------------------------------------
 

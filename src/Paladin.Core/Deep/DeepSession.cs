@@ -238,43 +238,23 @@ public sealed class DeepSession
         _diag?.Info($"Frozen: {freeze.Line}");
         _ui.Ok(DeepConsoleText.Frozen);
 
-        // 2-4. The definitions, the check, and a bounded repair.
-        for (var attempt = 1; attempt <= Math.Max(1, _options.RepairAttempts) + 1; attempt++)
+        // 2. The definitions. Each prints nothing, so there is no marker to wait for; the self-check
+        //    below is what proves they landed.
+        _ui.Pending(DeepConsoleText.Installing(DeepLadder.Definitions.Count));
+        if (await SendDefinitionsAsync(DeepLadder.Definitions, ct) is { } defFailure) return defFailure;
+
+        // 3. ASK, then repair only what was lost, then ask again. The check's answer is carried round
+        //    the loop rather than re-queried, so a repair costs exactly one extra self-check.
+        for (var repair = 0; repair <= Math.Max(0, _options.RepairAttempts); repair++)
         {
-            var missing = attempt == 1 ? null : await CheckAsync(ct);
-            var toSend = missing is null || missing.Count == 0
-                ? DeepLadder.Definitions
-                : DeepLadder.Definitions.Where(line => missing.Any(name => DefinesName(line, name))).ToList();
+            var missing = await CheckAsync(ct);
+            if (missing is null) return DeepFailures.BootstrapLost("the sampler's self-check never answered");
 
-            if (attempt > 1)
+            if (missing.Count == 0)
             {
-                if (missing is null) return DeepFailures.BootstrapLost("the sampler's self-check never answered");
-                if (missing.Count == 0) break;                       // nothing left to repair
-                if (toSend.Count == 0) toSend = DeepLadder.Definitions;  // cannot place the name: re-send them all
-                _ui.Warn(DeepConsoleText.Repairing(missing, attempt - 1, _options.RepairAttempts));
-                _diag?.Warn($"The console dropped {string.Join(", ", missing)}; re-sending {toSend.Count} definition line(s)");
-            }
-            else
-            {
-                _ui.Pending(DeepConsoleText.Installing(DeepLadder.Definitions.Count));
-            }
-
-            foreach (var line in toSend)
-            {
-                ct.ThrowIfCancellationRequested();
-                // A definition prints nothing, so there is no marker to wait for; SendAsync still
-                // checks that the game has not died of it. The self-check below is what proves it landed.
-                var sent = await _driver.SendAsync(line, null, TimeSpan.Zero, _log.Refresh(), tries: 1, ct);
-                if (sent.Outcome == LineOutcome.Fatal) return DeepFailures.BootstrapLost($"a fatal Scar error followed a definition: {sent.Line}");
-                if (sent.Outcome == LineOutcome.FocusLost) return DumpFailures.FocusLost(sent.Detail);
-            }
-
-            var check = await CheckAsync(ct);
-            if (check is null) return DeepFailures.BootstrapLost("the sampler's self-check never answered");
-            if (check.Count == 0)
-            {
-                _ui.Ok(DeepConsoleText.Installed(attempt));
-                // 5. Sample, register and thaw — one line, so the game is never left stopped.
+                _ui.Ok(DeepConsoleText.Installed(repair + 1));
+                // 4. Sample, register and thaw — the one line the kit proved, so the game is never
+                //    left stopped by a half-finished bootstrap.
                 var go = await _driver.SendAsync(
                     DeepLadder.Go, DeepLadder.SquadDoneMarker, TimeSpan.FromSeconds(_options.Pacing.DefWaitSeconds), _log.Refresh(), ConsoleDriver.TriesPerLine, ct);
                 if (!go.Landed) return DeepFailures.BootstrapLost($"the sampler was complete and SQ() did not answer: {go.Detail ?? go.Outcome.ToString()}");
@@ -283,11 +263,35 @@ public sealed class DeepSession
                 _ui.Ok(DeepConsoleText.Running(DeepLadder.Cadence, DeepLadder.SimRate));
                 return null;
             }
+
+            if (repair == _options.RepairAttempts)
+                return DeepFailures.BootstrapLost(
+                    $"the console kept dropping definition lines: {string.Join(", ", missing)} still missing after {_options.RepairAttempts} repair(s)");
+
+            // Re-send only the lines that define what is missing. A name we cannot place — V5WHO
+            // itself, or a helper defined alongside others — means re-sending all of them.
+            var toSend = DeepLadder.Definitions.Where(line => missing.Any(name => DefinesName(line, name))).ToList();
+            if (toSend.Count == 0) toSend = DeepLadder.Definitions.ToList();
+
+            _ui.Warn(DeepConsoleText.Repairing(missing, repair + 1, _options.RepairAttempts));
+            _diag?.Warn($"The console dropped {string.Join(", ", missing)}; re-sending {toSend.Count} definition line(s)");
+            if (await SendDefinitionsAsync(toSend, ct) is { } repairFailure) return repairFailure;
         }
 
-        var lost = await CheckAsync(ct) ?? new List<string>();
-        return DeepFailures.BootstrapLost(
-            $"the console kept dropping definition lines: {string.Join(", ", lost)} still missing after {_options.RepairAttempts} repair(s)");
+        return DeepFailures.BootstrapLost("the sampler could not be installed");
+    }
+
+    /// <summary>Paste a set of definition lines. Null when they all went in without the game dying.</summary>
+    private async Task<DumpFailure?> SendDefinitionsAsync(IReadOnlyList<string> lines, CancellationToken ct)
+    {
+        foreach (var line in lines)
+        {
+            ct.ThrowIfCancellationRequested();
+            var sent = await _driver.SendAsync(line, null, TimeSpan.Zero, _log.Refresh(), tries: 1, ct);
+            if (sent.Outcome == LineOutcome.Fatal) return DeepFailures.BootstrapLost($"a fatal Scar error followed a definition: {sent.Line}");
+            if (sent.Outcome == LineOutcome.FocusLost) return DumpFailures.FocusLost(sent.Detail);
+        }
+        return null;
     }
 
     /// <summary>

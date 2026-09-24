@@ -54,6 +54,42 @@ public static class DeepLadderTests
             True(all.All(l => l.Length <= DeepLadder.MaxLine), "every line, including the generated ones");
         });
 
+        Test("THE MARKERS THE LAUNCHER WAITS ON ARE RECOGNISED — this cost a real capture", () =>
+        {
+            // Verbatim from the failed run's game log. The freeze landed at 6.625s and the launcher
+            // could not see it, because HasMarker validated against a regex admitting only PALADIN2
+            // and PALADIN3. It waited for a line that was already on screen and gave up.
+            var freeze = Line("PALADIN9_FREEZE|true|0.0|6.625");
+            True(Paladin.Core.Dump.DumpLogText.HasMarker(freeze, DeepLadder.FreezeMarker), "the freeze must be visible to the wait");
+
+            var thaw = Line("PALADIN9_THAW|true|64.0|6.625");
+            True(Paladin.Core.Dump.DumpLogText.HasMarker(thaw, DeepLadder.ThawMarker), "and so must the thaw");
+
+            var missing = Line("PALADIN5_MISSING|V5A,V5B,V5P,");
+            True(Paladin.Core.Dump.DumpLogText.HasMarker(missing, DeepLadder.MissingMarker), "and the self-check's refusal, or a repair can never be triggered");
+
+            var allok = Line("PALADIN3_SQDEF|allok");
+            True(Paladin.Core.Dump.DumpLogText.HasMarker(allok, DeepLadder.AllOkMarker), "and the self-check's success");
+
+            var done = Line("PALADIN3_SQ_DONE|interval5");
+            True(Paladin.Core.Dump.DumpLogText.HasMarker(done, DeepLadder.SquadDoneMarker), "and SQ()'s own answer");
+        });
+
+        Test("widening the WAIT did not widen the dump's evidence filter", () =>
+        {
+            // §842 keeps the dump's filter narrow on purpose: a world dump must never start carrying
+            // sampler rows. Only the "is this a marker at all" check moved.
+            var sample = Line("PALADIN5_VA|84|1|50051|food|17.0|0.0|0.0|0.0|false|false|-|unit_villager_1_fre");
+            False(Paladin.Core.Dump.DumpLogText.IsPaladinLine(sample), "the dump filter still drops a sampler row");
+            False(Paladin.Core.Dump.DumpLogText.IsPaladinLine(Line("PALADIN9_FREEZE|true|0.0|6.625")), "and still drops the freeze");
+        });
+
+        Test("a marker quoted inside a fatal error is still not a marker", () =>
+        {
+            False(Paladin.Core.Dump.DumpLogText.HasMarker(Line("SCAR error: attempt to call 'PALADIN9_FREEZE|x' (a nil value)"), DeepLadder.FreezeMarker),
+                "the anchor at the start of the message is what makes it a marker");
+        });
+
         Test("the freeze stops game time and reports the rate and the clock", () =>
         {
             var freeze = DeepLadder.Freeze;
