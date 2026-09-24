@@ -52,5 +52,41 @@ public static class DeepCommandTests
             Equal("dump", PaladinUri.ActionOf("paladin://dump?game=1&url=https%3A%2F%2Fe.com%2Fx")!);
         });
 
+
+        Suite("Launcher callback");
+
+        Test("the announcement is the two parameters the site reads, and nothing else", () =>
+        {
+            var url = LauncherCallback.UrlFor("https://paladin.odinmaycall.com/api/world/", "0.5.0")!;
+            Equal("https://paladin.odinmaycall.com/?launcher=0.5.0&caps=deepCapture", url);
+        });
+
+        Test("IT ANNOUNCES TO THE CONFIGURED DEPLOY, so a test run never tells production it is here", () =>
+        {
+            Equal("http://localhost:8787/?launcher=0.5.0&caps=deepCapture", LauncherCallback.UrlFor("http://localhost:8787/api/world/", "0.5.0")!);
+        });
+
+        Test("the world dump's path never survives into the announcement", () =>
+        {
+            Equal("https://paladin.odinmaycall.com/", LauncherCallback.OriginOf("https://paladin.odinmaycall.com/api/world/"));
+            Equal("https://paladin.odinmaycall.com/", LauncherCallback.OriginOf("not a url"));
+            Equal("https://paladin.odinmaycall.com/", LauncherCallback.OriginOf("file:///C:/x"));
+        });
+
+        Test("a version the site would refuse is never sent", () =>
+        {
+            // The page refuses anything that is not a plain version, so sending one would announce
+            // a launcher that the site then ignores — worse than saying nothing.
+            True(LauncherCallback.UrlFor("https://x.test", "") is null, "an empty version");
+            True(LauncherCallback.UrlFor("https://x.test", "0.5.0 <script>") is null, "anything with markup in it");
+            True(LauncherCallback.UrlFor("https://x.test", new string('9', 33)) is null, "a version longer than the page accepts");
+        });
+
+        Test("deepCapture is announced by NAME, so the site never encodes a version number", () =>
+        {
+            True(LauncherCallback.Capabilities.Contains("deepCapture"), "this build can capture");
+            True(LauncherCallback.UrlFor("https://x.test", "0.5.0")!.Contains("caps=deepCapture"), "and says so by name");
+        });
+
     }
 }

@@ -1,8 +1,10 @@
+using System.Diagnostics;
 using System.Runtime.Versioning;
 using Paladin.Core.Config;
 using Paladin.Core.Deep;
 using Paladin.Core.Dump;
 using Paladin.Core.Logging;
+using Paladin.Core.Protocol;
 using Paladin.Core.Replay;
 using Paladin.Core.Shield;
 using Paladin.Launcher.Platform;
@@ -151,6 +153,15 @@ public sealed class DeepRunner
 
         if (keys?.RestoreClipboard() is { } clipboardNote) _ui.Note(clipboardNote);
 
+        // §869 — ONE SHELL-OPEN DOES BOTH JOBS. On a capture that landed, the reader is taken back to
+        // the game's build-order page — which is what they wanted when they clicked Deep Capture — and
+        // the same URL carries this launcher's version and capabilities, which is the whole handshake
+        // the site needs to stop offering Deep Capture on a launcher that cannot do it.
+        //
+        // ONLY ON SUCCESS. A failed capture has already said why in this window; yanking the reader's
+        // browser to a page with nothing new on it would be the second unhelpful thing in a row.
+        if (Result is { Ok: true } && !DryRun) OpenResultPage(request.GameId);
+
         if (Result?.Failure is { } failed) return failed.ExitCode;
 
         if (!DryRun && Result is null && exit == ExitCodes.Ok)
@@ -165,6 +176,31 @@ public sealed class DeepRunner
         }
 
         return exit;
+    }
+
+    /// <summary>
+    /// §869 — the game's build-order page, with this launcher's announcement riding along.
+    ///
+    /// Best effort by design: a machine with no default browser, or a shell that refuses, must not turn
+    /// a capture that worked into a run that reports failure.
+    /// </summary>
+    private void OpenResultPage(long gameId)
+    {
+        var origin = LauncherCallback.OriginOf(_config.DumpUploadBaseUrl);
+        var announce = LauncherCallback.UrlFor(_config.DumpUploadBaseUrl, _version);
+        var query = announce is null ? "" : announce[(announce.IndexOf('?') + 1)..];
+        var url = $"{origin}build-order?game={gameId}" + (query.Length == 0 ? "" : $"&{query}");
+        try
+        {
+            using var process = Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+            _ui.Note($"Opening the build order: {origin}build-order?game={gameId}");
+            _log.Info($"Opened {url}");
+        }
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or System.IO.FileNotFoundException)
+        {
+            _log.Warn($"Could not open the build-order page: {ex.Message}");
+            _ui.Note($"See the build order at {origin}build-order?game={gameId}");
+        }
     }
 
     private async Task<bool> CountdownAsync(CancellationToken ct)
