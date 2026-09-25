@@ -29,8 +29,23 @@ public static class LauncherCallback
     /// <summary>The capability the Deep Capture chip asks for by name.</summary>
     public const string DeepCapture = "deepCapture";
 
+    /// <summary>
+    /// 884 - CAN THIS BUILD COMPLETE A PARTIAL CAPTURE FROM A LINK?
+    ///
+    /// Two things have to be true at once, which is why it is ONE name rather than two. The build must
+    /// understand `force=1` on a paladin://deep link (884), or its own pre-flight refuses a game
+    /// Paladin already holds and the retry is a dead end. And it must RETAIN THE REPLAY (879), or the
+    /// re-capture produces another sampler-only artifact and the package is partial all over again.
+    ///
+    /// A launcher that has one without the other would send a reader through a five-minute capture
+    /// that cannot finish the job, so the site asks for this name before it offers the retry at all -
+    /// and shows the update message instead when it is absent. Named rather than versioned, exactly as
+    /// deepCapture is, so the site never encodes a version number.
+    /// </summary>
+    public const string DeepRetry = "deepRetry";
+
     /// <summary>What this build can do, by name. Named rather than versioned so the site never encodes version numbers.</summary>
-    public static IReadOnlyList<string> Capabilities { get; } = new[] { DeepCapture };
+    public static IReadOnlyList<string> Capabilities { get; } = new[] { DeepCapture, DeepRetry };
 
     /// <summary>
     /// The URL to open, or null when there is nothing sensible to announce.

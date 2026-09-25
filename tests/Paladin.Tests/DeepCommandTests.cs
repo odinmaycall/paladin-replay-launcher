@@ -58,12 +58,25 @@ public static class DeepCommandTests
         Test("the announcement is the two parameters the site reads, and nothing else", () =>
         {
             var url = LauncherCallback.UrlFor("https://paladin.odinmaycall.com/api/world/", "0.5.0")!;
-            Equal("https://paladin.odinmaycall.com/?launcher=0.5.0&caps=deepCapture", url);
+            // 884 - deepRetry joins it: the site asks for that name before offering to complete a partial
+            // capture, because doing so needs BOTH force= on the link and 879's replay retention.
+            // The comma is URL-encoded, which is correct and which the single-capability case never
+            // exercised. URLSearchParams on the site decodes it before splitting (launcherCapability.ts).
+            Equal("https://paladin.odinmaycall.com/?launcher=0.5.0&caps=deepCapture%2CdeepRetry", url);
         });
 
         Test("IT ANNOUNCES TO THE CONFIGURED DEPLOY, so a test run never tells production it is here", () =>
         {
-            Equal("http://localhost:8787/?launcher=0.5.0&caps=deepCapture", LauncherCallback.UrlFor("http://localhost:8787/api/world/", "0.5.0")!);
+            Equal("http://localhost:8787/?launcher=0.5.0&caps=deepCapture%2CdeepRetry", LauncherCallback.UrlFor("http://localhost:8787/api/world/", "0.5.0")!);
+        });
+
+        Test("884 - the build announces deepRetry, which the site asks for before offering a retry", () =>
+        {
+            // ONE name for two things, because a launcher with only one of them would send a reader
+            // through a five-minute capture that cannot finish the job: it must understand force= on
+            // the link, AND retain the replay, or the re-capture is another sampler-only artifact.
+            True(LauncherCallback.Capabilities.Contains(LauncherCallback.DeepRetry), "deepRetry is announced");
+            True(LauncherCallback.Capabilities.Contains(LauncherCallback.DeepCapture), "and deepCapture still is");
         });
 
         Test("the world dump's path never survives into the announcement", () =>

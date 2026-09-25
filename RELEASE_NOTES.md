@@ -1,7 +1,15 @@
-# Paladin Replay Launcher 0.5.2
+# Paladin Replay Launcher 0.5.3
 
 Opens an Age of Empires IV replay and puts your game settings back exactly as they were
 afterwards.
+
+## New in 0.5.3
+
+- **Finishing an unfinished capture is one click again.** If Paladin has part of a game's evidence
+  but not all of it — usually a capture made before 0.5.2, whose replay was never kept — its page
+  now offers to capture it again, and this launcher accepts that instead of refusing a game Paladin
+  already has. Before, the only way through was a command line. A game whose evidence is already
+  complete is never re-captured: the page only asks when there is something genuinely missing.
 
 ## New in 0.5.2
 

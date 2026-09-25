@@ -361,6 +361,7 @@ internal static class Program
         long gameId;
         ReplayRequest replay;
         var thenWatch = false;
+        var linkForce = false;
 
         if (options.PaladinUri is not null)
         {
@@ -378,6 +379,11 @@ internal static class Program
             gameId = parsed.GameId.Value;
             replay = parsed.Request;
             thenWatch = parsed.ThenWatch;
+            // 884 - a link may ask to re-capture a game Paladin already holds, and it means exactly
+            // what `--force` means. The site sends it only for a PARTIAL package, so this cannot
+            // quietly re-capture a finished game; the flag is OR-ed with the command-line one so a
+            // link and a flag do not fight.
+            linkForce = parsed.Force;
         }
         else
         {
@@ -399,7 +405,7 @@ internal static class Program
             gameId, replay,
             Upload: !options.NoUpload,
             Squads: options.Squads,
-            Force: options.Force,
+            Force: options.Force || linkForce,
             AssumeYes: options.AssumeYes,
             ThenWatch: thenWatch || options.ThenWatch);
     }

@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Paladin.Core.Deep;
 using Paladin.Core.Dump;
+using Paladin.Core.Protocol;
 using static Paladin.Tests.TestHarness;
 
 namespace Paladin.Tests;
@@ -361,6 +362,48 @@ public static class DeepPreflightTests
         // REPLAY's order stream, and Microsoft stops serving replays about three months after the
         // game. So the launcher keeps the exact file it just played, at the one moment it is certainly
         // still there, and Paladin parses it with its OWN parser rather than trusting anyone else's.
+        // 884 - ONE CLICK COMPLETES A PARTIAL CAPTURE, which until now needed a terminal.
+        //
+        // A capture whose sampler landed but whose replay was never retained is reported `partial`,
+        // and the launcher's own pre-flight refuses a game Paladin already holds. So the partial chip
+        // offered a re-capture the launcher would always decline, and the only way through was
+        // `--deep <id> --force`. The link may now say force=1, and it means exactly that flag.
+        Suite("Deep retry links");
+
+        Test("FORCE=1 ON A DEEP LINK IS THE SAME THING AS --force", () =>
+        {
+            var parsed = PaladinUri.Parse("paladin://deep?game=253129753&url=https%3A%2F%2Fexample.com%2Fr.rec&force=1");
+            True(parsed.Ok, parsed.Error ?? "");
+            True(parsed.IsDeep, "still a Deep link");
+            Equal(253129753L, parsed.GameId!.Value);
+            True(parsed.Force, "and it carries the force the site asked for");
+        });
+
+        Test("a link WITHOUT it never forces, so a complete game is never re-captured by accident", () =>
+        {
+            var parsed = PaladinUri.Parse("paladin://deep?game=253129753&url=https%3A%2F%2Fexample.com%2Fr.rec");
+            True(parsed.Ok, parsed.Error ?? "");
+            False(parsed.Force, "absent means no");
+        });
+
+        Test("an unknown value is ignored rather than refused, exactly as then= is", () =>
+        {
+            // An unrecognised flag is not a reason to throw away a good capture link.
+            var parsed = PaladinUri.Parse("paladin://deep?game=1&url=https%3A%2F%2Fexample.com%2Fr.rec&force=yes-please");
+            True(parsed.Ok, "the link still works");
+            False(parsed.Force, "it simply does not force");
+        });
+
+        Test("ONLY A DEEP LINK MAY FORCE; a dump link carrying it does not", () =>
+        {
+            // force= means "re-capture a game Paladin already holds". A dump link asking for it would
+            // be asking for something this flag does not mean.
+            var parsed = PaladinUri.Parse("paladin://dump?game=1&url=https%3A%2F%2Fexample.com%2Fr.rec&force=1");
+            True(parsed.Ok, parsed.Error ?? "");
+            True(parsed.IsDump, "still a dump link");
+            False(parsed.Force, "and it does not force");
+        });
+
         Suite("Deep replay retention");
 
         Test("it posts to the replay route on the configured ORIGIN, never under /api/world/", () =>

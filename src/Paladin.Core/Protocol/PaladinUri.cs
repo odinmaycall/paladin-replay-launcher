@@ -40,6 +40,9 @@ public static class PaladinUri
     /// <summary>"Dump, then watch": the page's &amp;then=watch on a dump link (§717 §3.1).</summary>
     public const string ThenWatchValue = "watch";
 
+    /// <summary>884 - the value force= must carry for a link to re-capture a game Paladin already holds.</summary>
+    public const string ForceValue = "1";
+
     /// <param name="Action">"replay" or "dump" when Ok.</param>
     /// <param name="GameId">The game the rows are sent under; only a dump link carries one.</param>
     /// <param name="ThenWatch">
@@ -47,12 +50,26 @@ public static class PaladinUri
     /// again as an ordinary watch session. Any other then= value is ignored rather than
     /// refused — an unknown follow-on is not a reason to throw away a good dump link.
     /// </param>
+    /// <param name="Force">
+    /// 884 - the link carried force=1: capture this game again even though Paladin already holds one.
+    ///
+    /// It exists for ONE case. A capture whose sampler landed but whose durable evidence did not - no
+    /// retained replay, so no orders, spatial or eAPM - is reported by the site as `partial`, and the
+    /// launcher's own pre-flight refuses to touch a game it already holds. Before this the partial
+    /// chip was a dead end: it offered a re-capture the launcher would always decline, and the only
+    /// way through was `--deep &lt;id&gt; --force` in a terminal.
+    ///
+    /// THE SITE SENDS IT ONLY FOR A PARTIAL PACKAGE. A complete one never carries it, so a link cannot
+    /// quietly cost someone a re-capture of a game that is already finished. Any value other than the
+    /// one below is ignored rather than refused, exactly as `then=` is - an unknown flag is not a
+    /// reason to throw away a good capture link.
+    /// </param>
     public sealed record ParseResult(
-        bool Ok, ReplayRequest? Request, string? Error, string? Action = null, long? GameId = null, bool ThenWatch = false)
+        bool Ok, ReplayRequest? Request, string? Error, string? Action = null, long? GameId = null, bool ThenWatch = false, bool Force = false)
     {
         public static ParseResult Fail(string error) => new(false, null, error);
-        public static ParseResult Success(ReplayRequest request, string action = ReplayAction, long? gameId = null, bool thenWatch = false) =>
-            new(true, request, null, action, gameId, thenWatch);
+        public static ParseResult Success(ReplayRequest request, string action = ReplayAction, long? gameId = null, bool thenWatch = false, bool force = false) =>
+            new(true, request, null, action, gameId, thenWatch, force);
 
         public bool IsDump => Ok && Action == DumpAction;
 
@@ -123,6 +140,7 @@ public static class PaladinUri
         // a repeated game= (joined with a comma by ParseQueryString) or anything else is refused.
         long? gameId = null;
         var thenWatch = false;
+        var force = false;
         if (isDump || isDeep)
         {
             var game = query["game"];
@@ -135,6 +153,9 @@ public static class PaladinUri
             // "Dump, then watch" is the same dump with a watch after it. Only this one value
             // is understood; anything else in then= is ignored, never refused.
             thenWatch = string.Equals(query["then"], ThenWatchValue, StringComparison.OrdinalIgnoreCase);
+            // 884 - only a Deep link may force, and only with the exact value. A dump link that
+            // carried it would be asking for something this flag does not mean.
+            force = isDeep && string.Equals(query["force"], ForceValue, StringComparison.OrdinalIgnoreCase);
         }
 
         // A link may carry several `url` values. HttpUtility joins repeats with commas,
@@ -164,7 +185,7 @@ public static class PaladinUri
                 Value = accepted[0],
                 Fallbacks = accepted.Skip(1).ToList(),
                 SuggestedName = NullIfBlank(query["name"]),
-            }, actionName, gameId, thenWatch);
+            }, actionName, gameId, thenWatch, force);
         }
 
         var path = query["path"];
@@ -175,7 +196,7 @@ public static class PaladinUri
                 Kind = "local",
                 Value = path,
                 SuggestedName = NullIfBlank(query["name"]),
-            }, actionName, gameId, thenWatch);
+            }, actionName, gameId, thenWatch, force);
         }
 
         // A capture needs a replay it can fetch or find; the archive-id form has no provider.
