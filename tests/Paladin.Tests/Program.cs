@@ -1,4 +1,4 @@
-﻿using Paladin.Tests;
+using Paladin.Tests;
 
 Console.WriteLine();
 Console.WriteLine("  Paladin Replay Launcher — test suite");
@@ -11,6 +11,7 @@ PathDisplayTests.Register();
 DumpTests.Register();
 DumpRunTests.Register();
 DeepEvidenceTests.Register();
+ReplayHoldTests.Register();
 DeepLadderTests.Register();
 DeepSelfCheckTests.Register();
 DeepEnvelopeTests.Register();

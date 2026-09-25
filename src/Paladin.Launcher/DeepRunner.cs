@@ -134,6 +134,8 @@ public sealed class DeepRunner
         var watcher = new GameLogWatcher(env.Aoe4DocumentsPath!, DateTime.UtcNow, _log);
 
         KeyboardInjector? keys = null;
+        // §888 — the replay's bytes, taken during the session rather than looked for after it.
+        ReplayHold? hold = null;
         var runner = new SessionRunner(_config, _log, _ui, _store, _providers)
         {
             DryRun = DryRun,
@@ -142,6 +144,12 @@ public sealed class DeepRunner
             ReplayNameCheck = name => DumpChecks.NameMatchesGame(name, request.GameId)
                 ? null
                 : DumpChecks.WrongReplayMessage(name, request.GameId),
+            // §888 — AND THE BYTES ARE TAKEN BEFORE THE SHIELD RESTORES, because this run deletes the
+            // replay it placed on its way out and the retention below would otherwise arrive at a path
+            // with nothing on the end of it. Only when there is somewhere to send them.
+            WhileReplayIsStillThere = request.Upload && !DryRun
+                ? path => hold = ReplayHold.From(path, _log)
+                : null,
             CancelPolicy = ExitPolicy.EndProcess(TimeSpan.FromSeconds(_config.DumpCloseGraceSeconds)),
             WhileRunning = async (context, token) =>
             {
@@ -180,7 +188,7 @@ public sealed class DeepRunner
         // ONLY ON SUCCESS. A failed capture has already said why in this window; yanking the reader's
         // browser to a page with nothing new on it would be the second unhelpful thing in a row.
         /**
-         * §879 — AND THE REPLAY IS RETAINED, because this is the last moment it is certainly here.
+         * §879 — AND THE REPLAY IS RETAINED, so the build order survives Microsoft dropping it.
          *
          * A sampler artifact alone is not the trusted result: the build order's clocks, its Builders
          * column and its landmark placements all come from the REPLAY's order stream. Paladin can only
@@ -190,15 +198,28 @@ public sealed class DeepRunner
          * AFTER the capture and only on success. A game with no sampler is not made Deep by a replay,
          * and uploading one for a failed capture would bank megabytes for nothing.
          *
+         * §888 — AND IT SENDS BYTES, NOT A PATH. The line above used to read "because this is the last
+         * moment it is certainly here", which was the opposite of true: SessionRunner deletes the replay
+         * it placed in playback\ before RunAsync returns, so the first capture made with §879 installed
+         * said "Keeping this game's replay with Paladin" and then "Could not find file ...". The bytes
+         * are now held during the session (WhileReplayIsStillThere) and only the UPLOAD happens here,
+         * where a slow network no longer sits between the game exiting and the settings being restored.
+         *
          * NEVER FATAL. The capture has already landed and been accepted; if retention fails the game
          * simply reports `partial` and can be completed later without replaying anything. So this
          * neither changes the exit code nor stops the reader being taken to their build order.
          */
-        if (Result is { Ok: true } && !DryRun && request.Upload && uploader is not null && runner.PreparedReplayPath is not null)
+        if (Result is { Ok: true } && !DryRun && request.Upload && uploader is not null
+            && (hold is not null || runner.PreparedReplayPath is not null))
         {
             var replays = new ReplayUploader(_config.DumpUploadBaseUrl, _version, _log);
             _ui.Note(DeepConsoleText.RetainingReplay());
-            var kept = await replays.UploadAsync(request.GameId, runner.PreparedReplayPath!, ct);
+            // The held bytes are the normal route. The path is the fallback for a run that left the
+            // replay in place (--keep-replay), where it does outlive the session; and if neither has
+            // anything, the console gets the file system's own reason rather than silence.
+            var kept = hold is { Ok: true } ? await replays.UploadAsync(request.GameId, hold, ct)
+                : runner.PreparedReplayPath is { } stillThere ? await replays.UploadAsync(request.GameId, stillThere, ct)
+                : new ReplayUploadResult(false, 0, 0, hold?.Error ?? "the replay was never placed");
             if (kept.Ok) _ui.Ok(DeepConsoleText.ReplayRetained(kept.WireBytes, kept.RawBytes, kept.Parsed));
             else _ui.Warn(DeepConsoleText.ReplayNotRetained(kept.Error));
         }

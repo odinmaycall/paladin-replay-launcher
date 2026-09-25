@@ -88,6 +88,26 @@ public sealed class SessionRunner
     /// </summary>
     public string? PreparedReplayPath { get; private set; }
 
+    /// <summary>
+    /// §888 — A LAST LOOK AT THE PLACED REPLAY, WHILE IT IS CERTAINLY STILL ON DISK.
+    ///
+    /// WHY A HOOK AND NOT A PATH. `PreparedReplayPath` says where the replay WAS; it cannot say when.
+    /// This run copies the replay into playback\, owns it, and deletes it again in CleanUp before
+    /// RunAsync returns - so a caller that waits for the return value and then opens that path finds
+    /// nothing. That is exactly how Deep Capture's replay retention failed on the first real capture
+    /// made with it: right path, right guard, file already deleted by the run that wanted it.
+    ///
+    /// It fires ONCE, after the game has exited and before the settings are compared and restored -
+    /// the one window in which the file is neither held open by the game nor already gone. Only when a
+    /// game actually ran, because a launch that never got that far has nothing to look at.
+    ///
+    /// SYNCHRONOUS, AND ANYTHING IT THROWS IS SWALLOWED. It sits directly in front of the restore, and
+    /// no caller's interest in the replay may delay or endanger putting the user's settings back.
+    /// </summary>
+    public Action<string>? WhileReplayIsStillThere { get; init; }
+
+    private bool _lookedAtReplay;
+
     public SessionRunner(
         LauncherConfig config, PaladinLog log, IShieldUi ui, SessionStore store, ReplayProviderRegistry providers)
     {
@@ -579,6 +599,25 @@ public sealed class SessionRunner
         bool gameRan,
         bool promptBeforeRestore = false)
     {
+        // §888 — the caller's last look at the replay. Everything below this line either moves the
+        // replay's folder back to how it was or removes the file outright, so a caller that wants the
+        // bytes has to be given them here. Before the settle delay, not after: the game has already
+        // exited, and there is no reason to hold the replay's only certain moment open for longer.
+        if (gameRan && placedReplay is not null && !_lookedAtReplay && WhileReplayIsStillThere is not null)
+        {
+            _lookedAtReplay = true;
+            try
+            {
+                WhileReplayIsStillThere(placedReplay);
+            }
+            catch (Exception ex)
+            {
+                // Deliberately every exception: a restore is not put at risk by whatever a caller
+                // meant to do with the replay.
+                _log.Warn($"The last look at the replay failed: {ex.Message}");
+            }
+        }
+
         if (gameRan && _config.PostExitSettleSeconds > 0)
         {
             _log.Debug($"Settling {_config.PostExitSettleSeconds}s so AoE4 can finish flushing its config files.");

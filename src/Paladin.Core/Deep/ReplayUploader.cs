@@ -72,24 +72,32 @@ public sealed class ReplayUploader
     /// Send it. Returns a short outcome for the console rather than a rich result: nothing downstream
     /// branches on this, because a failed retention never fails a capture that already succeeded.
     /// </summary>
-    public async Task<ReplayUploadResult> UploadAsync(long gameId, string replayPath, CancellationToken ct)
-    {
-        byte[] raw;
-        try
-        {
-            raw = await File.ReadAllBytesAsync(replayPath, ct);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            _log.Warn($"Could not read the replay to retain it: {ex.Message}");
-            return new ReplayUploadResult(false, 0, 0, $"the replay could not be read ({ex.Message})");
-        }
+    public Task<ReplayUploadResult> UploadAsync(long gameId, string replayPath, CancellationToken ct)
+        => UploadAsync(gameId, ReplayHold.From(replayPath, _log), ct);
 
-        var body = Compress(raw);
+    /// <summary>
+    /// §888 — send bytes that were taken while the replay still existed.
+    ///
+    /// The overload above is the convenience one, and it is only safe where the file outlives the call.
+    /// Deep Capture's does not: the launcher deletes the replay it placed in `playback\` on its way out
+    /// of the very run that wants to keep it (see ReplayHold). So the capture path holds the bytes at
+    /// the last moment they exist and hands them here afterwards, when a slow network no longer sits
+    /// between the game exiting and the Shield restoring the settings.
+    ///
+    /// An empty hold is reported exactly as a failed read was before: no wire traffic, no exception,
+    /// and the reason the console prints is the one the file system gave.
+    /// </summary>
+    public async Task<ReplayUploadResult> UploadAsync(long gameId, ReplayHold hold, CancellationToken ct)
+    {
+        if (hold.Body is null)
+            return new ReplayUploadResult(false, 0, hold.RawBytes, hold.Error ?? "the replay could not be read");
+
+        var body = hold.Body;
+        var rawBytes = hold.RawBytes;
         if (body.LongLength > WireCapBytes)
         {
             // Saying so here is better than a 413 after a two-minute upload.
-            return new ReplayUploadResult(false, body.Length, raw.Length, $"the compressed replay is {body.Length / 1024} KiB, over Paladin's {WireCapBytes / 1024} KiB limit");
+            return new ReplayUploadResult(false, body.Length, rawBytes, $"the compressed replay is {body.Length / 1024} KiB, over Paladin's {WireCapBytes / 1024} KiB limit");
         }
 
         try
@@ -107,18 +115,18 @@ public sealed class ReplayUploader
             if (!response.IsSuccessStatusCode)
             {
                 _log.Warn($"Retaining the replay was refused: HTTP {(int)response.StatusCode} {text}");
-                return new ReplayUploadResult(false, body.Length, raw.Length, $"Paladin refused it (HTTP {(int)response.StatusCode})");
+                return new ReplayUploadResult(false, body.Length, rawBytes, $"Paladin refused it (HTTP {(int)response.StatusCode})");
             }
             // "parsed" means the whole package is complete; "retained" means the bytes are safe and the
             // parse can be redone later. Both are successes from here.
             var parsed = text.Contains("\"status\":\"parsed\"", StringComparison.Ordinal);
             _log.Info($"Replay retained for game {gameId}: {body.Length} bytes on the wire, parsed={parsed}");
-            return new ReplayUploadResult(true, body.Length, raw.Length, null, parsed);
+            return new ReplayUploadResult(true, body.Length, rawBytes, null, parsed);
         }
         catch (Exception ex) when (ex is HttpRequestException or IOException or OperationCanceledException && !ct.IsCancellationRequested)
         {
             _log.Warn($"Could not reach {Host} to retain the replay: {ex.Message}");
-            return new ReplayUploadResult(false, body.Length, raw.Length, $"could not reach {Host} ({ex.Message})");
+            return new ReplayUploadResult(false, body.Length, rawBytes, $"could not reach {Host} ({ex.Message})");
         }
     }
 }
