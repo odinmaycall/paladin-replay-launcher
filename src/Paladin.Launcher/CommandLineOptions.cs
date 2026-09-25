@@ -219,13 +219,26 @@ public sealed class CommandLineOptions
 
     private static string? Next(string[] args, ref int i) => i + 1 < args.Length ? args[++i] : null;
 
-    public static void PrintUsage()
+    /**
+     * 886 - THE HELP SAYS WHICH BUILD THIS IS, because that is what it is being read for.
+     *
+     * Double-clicking the exe prints this screen, so it is the first and often only thing a reader
+     * sees after downloading - and the commonest question at that moment is "did the new version
+     * actually land?". It never answered. The owner hit exactly that: three downloads, an install
+     * that was really just this help text, and no way to tell from the screen which build had run.
+     *
+     * The version was always available (AppVersion, from the assembly), it simply was not printed.
+     */
+    public static void PrintUsage(string? version = null)
     {
+        var build = string.IsNullOrWhiteSpace(version) ? "" : $" {version}";
         Console.WriteLine(
-            """
+            $"""
 
-              Paladin Replay Launcher — opens an Age of Empires IV replay with
+              Paladin Replay Launcher{build} — opens an Age of Empires IV replay with
               Paladin Shield protecting your game settings.
+
+              THIS FILE IS NOT INSTALLED BY OPENING IT. Run --install once (below).
 
               USAGE
                 PaladinReplayLauncher.exe <replay-path-or-url> [options]

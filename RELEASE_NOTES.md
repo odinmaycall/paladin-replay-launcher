@@ -1,7 +1,17 @@
-# Paladin Replay Launcher 0.5.3
+# Paladin Replay Launcher 0.5.4
 
 Opens an Age of Empires IV replay and puts your game settings back exactly as they were
 afterwards.
+
+## New in 0.5.4
+
+- **It tells you which version you are looking at, and that opening it installs nothing.** Opening
+  the downloaded file prints the help screen — it does not install anything, and until now that
+  screen never said which build it belonged to. So it was possible to download a new version
+  several times, open it each time, and have no way to tell that nothing had changed. The header
+  now carries the version and says plainly that `--install` is the step that does the installing.
+- **Installing says what it replaced.** `--install` now reports the version it put in place and the
+  one it replaced, so an upgrade is visibly an upgrade.
 
 ## New in 0.5.3
 

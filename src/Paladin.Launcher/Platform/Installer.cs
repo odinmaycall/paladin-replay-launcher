@@ -72,12 +72,19 @@ public static class Installer
                     ui.Fail("An installed copy is currently running. Close it and run --install again.");
                     return false;
                 }
+                // 886 - say WHICH BUILD replaced WHICH, because that is the question being asked.
+                //
+                // The owner installed three times in an afternoon without being able to tell whether
+                // anything had changed: the help screen carried no version, and this line named a path
+                // and not a build. Naming both ends makes an upgrade self-evidently an upgrade.
+                var was = VersionOf(target);
                 File.Copy(source, target, overwrite: true);
-                ui.Ok($"Installed to {target}");
+                var now = VersionOf(target);
+                ui.Ok(was is null ? $"Installed {now} to {target}" : $"Installed {now} to {target} (replacing {was})");
             }
             else
             {
-                ui.Ok($"Already running from {target}");
+                ui.Ok($"Already running {VersionOf(target) ?? "this build"} from {target}");
             }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -149,6 +156,26 @@ public static class Installer
             ui.Note("Those are deliberately left alone. Delete them yourself once you are sure you do not need them.");
         }
         return ok;
+    }
+
+    /// <summary>
+    /// 886 - the file version of an exe on disk, or null when it is not there / unreadable.
+    ///
+    /// Read from the file rather than from this process, because the point is to compare the copy
+    /// being replaced with the copy replacing it.
+    /// </summary>
+    private static string? VersionOf(string path)
+    {
+        try
+        {
+            if (!File.Exists(path)) return null;
+            var v = System.Diagnostics.FileVersionInfo.GetVersionInfo(path).FileVersion;
+            return string.IsNullOrWhiteSpace(v) ? null : v;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
     }
 
     private static bool IsFileLocked(string path)

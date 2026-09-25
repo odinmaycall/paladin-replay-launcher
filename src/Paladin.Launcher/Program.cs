@@ -89,7 +89,7 @@ internal static class Program
         var options = CommandLineOptions.Parse(rawArgs);
         if (options.ShowHelp)
         {
-            CommandLineOptions.PrintUsage();
+            CommandLineOptions.PrintUsage(AppVersion());
             return ExitCodes.Ok;
         }
 
@@ -128,7 +128,7 @@ internal static class Program
             switch (options.Command)
             {
                 case Command.Help:
-                    CommandLineOptions.PrintUsage();
+                    CommandLineOptions.PrintUsage(AppVersion());
                     return ExitCodes.Ok;
 
                 case Command.Version:
@@ -186,7 +186,7 @@ internal static class Program
                     return await RunDumpUpload(options, config, log, ui, store);
 
                 default:
-                    CommandLineOptions.PrintUsage();
+                    CommandLineOptions.PrintUsage(AppVersion());
                     return ExitCodes.BadArguments;
             }
         }
@@ -440,7 +440,7 @@ internal static class Program
             return ReplayProviderRegistry.ClassifyRawInput(options.ReplayInput);
 
         ui.Fail("No replay was supplied.");
-        CommandLineOptions.PrintUsage();
+        CommandLineOptions.PrintUsage(AppVersion());
         return null;
     }
 
