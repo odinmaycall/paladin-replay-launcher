@@ -109,25 +109,40 @@ public static class DeepCommandTests
         Test("the announcement is the two parameters the site reads, and nothing else", () =>
         {
             var url = LauncherCallback.UrlFor("https://paladin.odinmaycall.com/api/world/", "0.5.0")!;
-            // 884 - deepRetry joins it: the site asks for that name before offering to complete a partial
-            // capture, because doing so needs BOTH force= on the link and 879's replay retention.
-            // The comma is URL-encoded, which is correct and which the single-capability case never
-            // exercised. URLSearchParams on the site decodes it before splitting (launcherCapability.ts).
-            Equal("https://paladin.odinmaycall.com/?launcher=0.5.0&caps=deepCapture%2CdeepRetry", url);
+            // 884 - deepRetry joins it: the site asks for that name before offering to complete a
+            // partial capture. 890 - and replayRetention joins it as its OWN fact rather than as half
+            // of deepRetry's meaning. The commas are URL-encoded, which is correct and which the
+            // single-capability case never exercised; URLSearchParams on the site decodes before
+            // splitting (launcherCapability.ts).
+            //
+            // THIS EXACT STRING IS THE CROSS-REPO CONTRACT. The site pins the same one in
+            // src/lib/launcherCapability.test.ts, so a rename or a reordering here fails a test in a
+            // repo this build never sees, which is the only way two halves in two repos stay honest.
+            Equal("https://paladin.odinmaycall.com/?launcher=0.5.0&caps=deepCapture%2CdeepRetry%2CreplayRetention", url);
         });
 
         Test("IT ANNOUNCES TO THE CONFIGURED DEPLOY, so a test run never tells production it is here", () =>
         {
-            Equal("http://localhost:8787/?launcher=0.5.0&caps=deepCapture%2CdeepRetry", LauncherCallback.UrlFor("http://localhost:8787/api/world/", "0.5.0")!);
+            Equal("http://localhost:8787/?launcher=0.5.0&caps=deepCapture%2CdeepRetry%2CreplayRetention", LauncherCallback.UrlFor("http://localhost:8787/api/world/", "0.5.0")!);
         });
 
-        Test("884 - the build announces deepRetry, which the site asks for before offering a retry", () =>
+        Test("890 - THIS BUILD CLAIMS RETENTION SEPARATELY, because 0.5.3 claimed it by implication", () =>
         {
-            // ONE name for two things, because a launcher with only one of them would send a reader
-            // through a five-minute capture that cannot finish the job: it must understand force= on
-            // the link, AND retain the replay, or the re-capture is another sampler-only artifact.
-            True(LauncherCallback.Capabilities.Contains(LauncherCallback.DeepRetry), "deepRetry is announced");
-            True(LauncherCallback.Capabilities.Contains(LauncherCallback.DeepCapture), "and deepCapture still is");
+            // 884 made deepRetry mean two things at once: understands force=, and keeps the replay.
+            // 0.5.3 then shipped saying that name with retention broken by 888's ordering bug, so the
+            // site offered retries that could never complete the package. One name covering two
+            // independent facts is what allowed a half-true announcement, so they are separate now.
+            True(LauncherCallback.Capabilities.Contains(LauncherCallback.DeepCapture), "deepCapture is announced");
+            True(LauncherCallback.Capabilities.Contains(LauncherCallback.DeepRetry), "deepRetry still is");
+            True(LauncherCallback.Capabilities.Contains(LauncherCallback.ReplayRetention), "and retention says so itself");
+
+            // A build that could not keep a replay would announce the first two and NOT the third, and
+            // the site would show the update message. Proving the shape of that announcement here
+            // costs nothing and pins what "withholding a capability" actually looks like on the wire.
+            var withoutRetention = new[] { LauncherCallback.DeepCapture, LauncherCallback.DeepRetry };
+            Equal(
+                "https://paladin.odinmaycall.com/?launcher=0.5.3&caps=deepCapture%2CdeepRetry",
+                LauncherCallback.UrlFor("https://paladin.odinmaycall.com/", "0.5.3", withoutRetention)!);
         });
 
         Test("the world dump's path never survives into the announcement", () =>

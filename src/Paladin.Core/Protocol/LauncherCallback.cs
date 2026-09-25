@@ -41,11 +41,38 @@ public static class LauncherCallback
     /// that cannot finish the job, so the site asks for this name before it offers the retry at all -
     /// and shows the update message instead when it is absent. Named rather than versioned, exactly as
     /// deepCapture is, so the site never encodes a version number.
+    ///
+    /// 890 - AND IT NO LONGER CARRIES THE SECOND HALF. See ReplayRetention below: this name now means
+    /// only "understands force=1", because a build announced it while its retention was broken.
     /// </summary>
     public const string DeepRetry = "deepRetry";
 
-    /// <summary>What this build can do, by name. Named rather than versioned so the site never encodes version numbers.</summary>
-    public static IReadOnlyList<string> Capabilities { get; } = new[] { DeepCapture, DeepRetry };
+    /// <summary>
+    /// 890 - DOES THE REPLAY ACTUALLY SURVIVE A CAPTURE MADE BY THIS BUILD?
+    ///
+    /// deepRetry was written to mean two things at once - understands force=1, AND retains the replay -
+    /// and for one release that was a claim no build could falsify. 0.5.3 announced deepRetry while its
+    /// retention was broken by an ordering bug (888): it read the replay from a path its own run had
+    /// already deleted. Every capture it made succeeded, uploaded, and left the package PARTIAL - and
+    /// the site then offered a retry that would do the same thing again, for ever.
+    ///
+    /// The fault was not the reasoning behind deepRetry, which was right. It was that ONE NAME COVERED
+    /// TWO INDEPENDENT FACTS, so a build could satisfy half of it and still say the word. Retention now
+    /// has its own name, and a build that cannot keep a replay simply does not say it.
+    ///
+    /// THE POINT OF A NAMED CAPABILITY IS THAT IT CAN BE WITHHELD. A version number cannot express
+    /// "this build captures but must not be asked to complete a package"; a missing name says exactly
+    /// that, and the site turns it into "update your launcher" rather than into a link that wastes five
+    /// minutes of someone's evening.
+    /// </summary>
+    public const string ReplayRetention = "replayRetention";
+
+    /// <summary>
+    /// What this build can do, by name. Named rather than versioned so the site never encodes version
+    /// numbers, and ORDERED, because the site's contract test pins this exact string: a reordering
+    /// would read as a contract change when nothing had actually changed.
+    /// </summary>
+    public static IReadOnlyList<string> Capabilities { get; } = new[] { DeepCapture, DeepRetry, ReplayRetention };
 
     /// <summary>
     /// The URL to open, or null when there is nothing sensible to announce.
