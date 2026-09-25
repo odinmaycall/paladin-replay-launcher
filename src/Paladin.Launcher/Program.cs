@@ -87,6 +87,41 @@ internal static class Program
         Console.OutputEncoding = System.Text.Encoding.UTF8;
 
         var options = CommandLineOptions.Parse(rawArgs);
+
+        /**
+         * 887 - A BARE DOUBLE-CLICK INSTALLS, because that is what the person doing it wants.
+         *
+         * The commonest thing anyone does with a downloaded exe is open it. Until now that printed a
+         * help screen and exited, so the owner downloaded this three times, opened it each time, and
+         * never left 0.5.0 - every paladin:// click kept running the old build. The install was
+         * --install, named once in the middle of the examples.
+         *
+         * Only a TRULY bare run (no arguments at all) is read this way. Anything with an argument -
+         * --help, --version, a replay, a paladin:// link - behaves exactly as it always has, which is
+         * why this tests rawArgs rather than ShowHelp: ShowHelp is also set by a malformed command
+         * line, and someone who typed something wrong is asking for help, not for an install.
+         *
+         * And the installed copy never installs itself onto itself: StartupAction decides from where
+         * this copy is running, before anything is touched.
+         */
+        if (rawArgs.Length == 0)
+        {
+            var intent = StartupAction.ForBareRun(ProtocolRegistrar.CurrentExecutablePath(), Installer.InstalledExePath);
+            if (intent == StartupIntent.Install)
+            {
+                using var installLog = new PaladinLog(echoToConsole: false);
+                // A double-click has no console to answer prompts from, so it answers them itself.
+                var installUi = new ConsoleShieldUi(assumeYes: true);
+                var ok = Installer.Install(installLog, installUi);
+                if (ok) installUi.Ok(StartupAction.InstalledMessage);
+                return ok ? ExitCodes.Ok : ExitCodes.UnexpectedError;
+            }
+            // Already the installed copy: say what it is, then the usual help.
+            Console.WriteLine($"  Paladin Replay Launcher {AppVersion()} is installed and paladin:// links are registered.");
+            CommandLineOptions.PrintUsage(AppVersion());
+            return ExitCodes.Ok;
+        }
+
         if (options.ShowHelp)
         {
             CommandLineOptions.PrintUsage(AppVersion());

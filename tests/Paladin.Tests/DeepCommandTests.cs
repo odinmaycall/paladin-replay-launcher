@@ -53,6 +53,57 @@ public static class DeepCommandTests
         });
 
 
+        // 887 - DOUBLE-CLICKING THE DOWNLOAD INSTALLS IT.
+        //
+        // Measured on a real afternoon: the owner downloaded the launcher three times, opened it each
+        // time, and never left 0.5.0, because opening it printed a help screen and exited. Every
+        // paladin:// click kept running the old build and nothing on screen said so.
+        Suite("Startup intent");
+
+        const string installedPath = @"C:\Users\Someone\AppData\Local\Programs\PaladinReplayLauncher\PaladinReplayLauncher.exe";
+
+        Test("A DOWNLOAD OPENED FROM THE DOWNLOADS FOLDER INSTALLS, which is the newcomer's first act", () =>
+        {
+            Equal(StartupIntent.Install, StartupAction.ForBareRun(@"C:\Users\Someone\Downloads\PaladinReplayLauncher (3).exe", installedPath));
+        });
+
+        Test("AND THE INSTALLED COPY NEVER INSTALLS ITSELF ONTO ITSELF", () =>
+        {
+            // The installed copy is also launched bare - by a paladin:// link that fails to parse, or
+            // by someone finding it in their programs folder. Copying a running file over itself
+            // either fails or half-succeeds, so this is the branch that must never be wrong.
+            Equal(StartupIntent.Status, StartupAction.ForBareRun(installedPath, installedPath));
+        });
+
+        Test("an upgrade over an older installed copy still reads as an install", () =>
+        {
+            Equal(StartupIntent.Install, StartupAction.ForBareRun(@"C:\Users\Someone\Downloads\PaladinReplayLauncher.exe", installedPath));
+        });
+
+        Test("THE SAME FILE UNDER A DIFFERENT SPELLING IS STILL THE SAME FILE", () =>
+        {
+            // Windows hands paths back inconsistently. A copy that failed to recognise itself here
+            // would try to install over the file it is running from.
+            Equal(StartupIntent.Status, StartupAction.ForBareRun(installedPath.ToUpperInvariant(), installedPath));
+            Equal(StartupIntent.Status, StartupAction.ForBareRun(@"C:\Users\Someone\AppData\Local\Programs\PaladinReplayLauncher\.\PaladinReplayLauncher.exe", installedPath));
+            Equal(StartupIntent.Status, StartupAction.ForBareRun(@"C:\Users\Someone\AppData\Local\Programs\Other\..\PaladinReplayLauncher\PaladinReplayLauncher.exe", installedPath));
+        });
+
+        Test("an unknown path installs rather than assuming it is already in place", () =>
+        {
+            // A single-file publish can report no path at all. Installing again is harmless; wrongly
+            // believing it is installed leaves the newcomer exactly where they started.
+            Equal(StartupIntent.Install, StartupAction.ForBareRun(null, installedPath));
+            Equal(StartupIntent.Install, StartupAction.ForBareRun("", installedPath));
+            Equal(StartupIntent.Install, StartupAction.ForBareRun(@"C:\Downloads\x.exe", null));
+        });
+
+        Test("the success line tells a newcomer they are done, and where to go", () =>
+        {
+            True(StartupAction.InstalledMessage.Contains("installed successfully"), StartupAction.InstalledMessage);
+            True(StartupAction.InstalledMessage.Contains("return to Paladin"), "and names the next move");
+        });
+
         Suite("Launcher callback");
 
         Test("the announcement is the two parameters the site reads, and nothing else", () =>
