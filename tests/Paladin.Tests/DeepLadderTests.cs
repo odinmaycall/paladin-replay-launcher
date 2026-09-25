@@ -277,6 +277,54 @@ public static class DeepPreflightTests
             False(DeepUploader.ParsePreflight("{}").Reachable, "JSON with no status is not an answer");
         });
 
+        // §876 — THE CLOCK THIS MATCH HAD, asked for rather than compiled in.
+        //
+        // 22% of the tournament set and 18% of the indexed ladder end before 15:00. Until now this
+        // launcher held 900 as a constant, so a reader who captured a 10:15 game end to end was told
+        // their complete capture had failed. The Worker publishes the answer; these pin the reading of
+        // it, in both directions.
+        Test("A SHORT GAME'S OWN CLOCK IS READ FROM THE ANSWER", () =>
+        {
+            var p = DeepUploader.ParsePreflight(
+                "{\"status\":\"none\",\"match\":true,\"orders\":false,\"uploads\":true,\"window\":900,\"required\":570,\"duration\":615,\"gzip\":true,\"wireBytes\":1048576,\"textBytes\":8388608}");
+            Equal(570, p.RequiredSeconds);
+            Equal(570, p.WindowOr(DeepLadder.WindowSeconds), "a 10:15 game is complete at its own end");
+        });
+
+        Test("a long game asks for the window, exactly as before", () =>
+        {
+            var p = DeepUploader.ParsePreflight(
+                "{\"status\":\"none\",\"match\":true,\"orders\":false,\"uploads\":true,\"window\":900,\"required\":900,\"duration\":1223,\"gzip\":true}");
+            Equal(900, p.WindowOr(DeepLadder.WindowSeconds));
+        });
+
+        Test("AN OLDER PALADIN, OR NONE AT ALL, LEAVES THE WINDOW STANDING", () =>
+        {
+            // A Worker from before §876 publishes `window` and no `required`; that is still better than
+            // a number compiled in here, and it is the same 900.
+            var older = DeepUploader.ParsePreflight("{\"status\":\"none\",\"match\":true,\"window\":900,\"gzip\":true}");
+            Equal(900, older.WindowOr(DeepLadder.WindowSeconds));
+
+            // One that publishes neither, and one we could not reach at all, both fall back.
+            Equal(0, DeepUploader.ParsePreflight("{\"status\":\"none\",\"match\":true}").RequiredSeconds);
+            Equal(DeepLadder.WindowSeconds, DeepUploader.ParsePreflight("{\"status\":\"none\",\"match\":true}").WindowOr(DeepLadder.WindowSeconds));
+            Equal(DeepLadder.WindowSeconds, DeepUploader.ParsePreflight("<!doctype html>").WindowOr(DeepLadder.WindowSeconds));
+        });
+
+        Test("a nonsense clock cannot shorten a capture", () =>
+        {
+            // Zero, negative and missing all mean "use the window": this must never be able to end a
+            // capture early on a malformed answer.
+            Equal(DeepLadder.WindowSeconds, DeepUploader.ParsePreflight("{\"status\":\"none\",\"required\":0,\"window\":900}").WindowOr(DeepLadder.WindowSeconds));
+            Equal(DeepLadder.WindowSeconds, DeepUploader.ParsePreflight("{\"status\":\"none\",\"required\":-5}").WindowOr(DeepLadder.WindowSeconds));
+        });
+
+        Test("the reader is told, once, that the capture runs to the end of a short game", () =>
+        {
+            var line = DeepConsoleText.ShortGame(570);
+            True(line.Contains("9:30"), $"the line must name the clock it will run to: {line}");
+        });
+
         Test("the upload target is the Worker's own route", () =>
         {
             var uploader = new DeepUploader("https://paladin.odinmaycall.com", "0.5.0", new Core.Logging.PaladinLog(false));

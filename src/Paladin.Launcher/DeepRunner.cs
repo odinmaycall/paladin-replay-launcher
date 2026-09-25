@@ -82,6 +82,12 @@ public sealed class DeepRunner
 
         var uploader = request.Upload ? new DeepUploader(_config.DumpUploadBaseUrl, _version, _log) : null;
 
+        // §876 — how far this capture has to run. The 15:00 window unless Paladin says this match ended
+        // sooner, which it does for the 22% of games that do. Asking is the only way to know: the
+        // launcher has no match record, and a compiled-in 900 is what told readers of short games that
+        // a complete capture had failed.
+        var windowSeconds = DeepLadder.WindowSeconds;
+
         if (uploader is not null)
         {
             // Asked BEFORE the launch, because a capture costs fifteen minutes of playback and a game
@@ -107,6 +113,12 @@ public sealed class DeepRunner
             }
             if (!preflight.Reachable)
                 _ui.Warn($"Could not reach {uploader.Host} to check this game first ({preflight.Error}). Capturing anyway; the result is kept on disk either way.");
+
+            // §876 — and the clock, from the same answer. An unreachable or older Paladin leaves the
+            // window standing, so this can only ever shorten the wait for a game that really was short.
+            windowSeconds = preflight.WindowOr(DeepLadder.WindowSeconds);
+            if (windowSeconds < DeepLadder.WindowSeconds)
+                _ui.Note(DeepConsoleText.ShortGame(windowSeconds));
         }
         else
         {
@@ -139,7 +151,11 @@ public sealed class DeepRunner
                 var session = new DeepSession(
                     new DeepSessionOptions(
                         request.GameId, context.SessionId, _version, context.ProcessSeenUtc,
-                        DumpPacing.From(_config), request.Upload),
+                        DumpPacing.From(_config), request.Upload)
+                    {
+                        // §876 — the window, or this match's own end when Paladin said it ended sooner.
+                        WindowSeconds = windowSeconds,
+                    },
                     keys, watcher, new ShieldDumpReporter(_ui),
                     new SessionDeepStore(context.SessionDirectory, _log),
                     uploader, _log,

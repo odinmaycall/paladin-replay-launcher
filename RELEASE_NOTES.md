@@ -1,7 +1,16 @@
-# Paladin Replay Launcher 0.5.0
+# Paladin Replay Launcher 0.5.1
 
 Opens an Age of Empires IV replay and puts your game settings back exactly as they were
 afterwards.
+
+## New in 0.5.1
+
+- **A capture of a short game is no longer called a failure.** Deep Capture ran to 15:00 and
+  refused anything shorter — but about a fifth of games end before 15:00, so a capture that
+  followed one of those to its final second was reported as incomplete and thrown away. The
+  launcher now asks Paladin how long the match actually ran and captures to the end of it. A
+  game that runs past 15:00 is unchanged, and a capture that stops early in a long game is
+  still refused, because that one really is missing part of the build order.
 
 ## New in 0.5.0
 

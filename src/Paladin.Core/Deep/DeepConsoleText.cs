@@ -59,6 +59,13 @@ public static class DeepConsoleText
 
     public static string Progress(int at, int window) => $"Captured to {Clock(at)} of {Clock(window)}…";
 
+    /// <summary>
+    /// §876 — said once, before the launch, when Paladin reports this game ended before 15:00. Without
+    /// it the reader watches a progress line count towards a clock their game never had.
+    /// </summary>
+    public static string ShortGame(int window) =>
+        $"This game ended before 15:00, so the capture runs to {Clock(window)} — the whole match.";
+
     public static string Captured(int samples, int first, int last) =>
         $"Captured {samples:N0} readings from {Clock(first)} to {Clock(last)}.";
 

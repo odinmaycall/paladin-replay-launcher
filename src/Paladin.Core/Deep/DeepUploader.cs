@@ -7,10 +7,20 @@ namespace Paladin.Core.Deep;
 
 /// <param name="Status">"none", "owner", "user" or "unknown" — the Worker's own vocabulary.</param>
 /// <param name="Gzip">The Worker announced it will inflate a compressed body. False on an older Worker.</param>
-public sealed record DeepPreflight(string Status, bool Match, bool Orders, bool Gzip, long WireBytes, long TextBytes, string? Error = null)
+/// <param name="RequiredSeconds">
+/// §876 — the clock a capture of THIS match must reach: the 15:00 window, or the end of a game that
+/// finished sooner. 22% of the tournament set and 18% of the indexed ladder end before 15:00, and this
+/// launcher hard-coded 900 — so a reader who captured a 10:15 game end to end was told their complete
+/// capture had failed. Zero means the Worker did not say (an older Paladin, or one we could not reach),
+/// and the caller then uses the window, exactly as this launcher always did.
+/// </param>
+public sealed record DeepPreflight(string Status, bool Match, bool Orders, bool Gzip, long WireBytes, long TextBytes, string? Error = null, int RequiredSeconds = 0)
 {
     public bool Reachable => Error is null;
     public bool AlreadyHeld => Status is "owner" or "user";
+
+    /// <summary>§876 — the clock to capture to: what the Worker said, or the window when it said nothing.</summary>
+    public int WindowOr(int fallback) => RequiredSeconds > 0 ? RequiredSeconds : fallback;
 }
 
 /// <summary>
@@ -115,7 +125,12 @@ public sealed class DeepUploader
 
             var status = Str("status");
             if (status.Length == 0) return new DeepPreflight("unknown", false, false, false, 0, 0, "no status in the answer");
-            return new DeepPreflight(status, Bool("match"), Bool("orders"), Bool("gzip"), Num("wireBytes"), Num("textBytes"));
+            // §876 — `required` is this match's own clock; `window` is the sheet's 15:00 and is what a
+            // Paladin older than §876 publishes. Either is better than a number compiled in here, and
+            // a Worker that sends neither leaves this at zero, which means "use the window".
+            var required = Num("required");
+            if (required <= 0) required = Num("window");
+            return new DeepPreflight(status, Bool("match"), Bool("orders"), Bool("gzip"), Num("wireBytes"), Num("textBytes"), null, (int)Math.Clamp(required, 0, int.MaxValue));
         }
         catch (JsonException ex)
         {
