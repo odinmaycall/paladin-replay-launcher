@@ -1,7 +1,16 @@
-# Paladin Replay Launcher 0.5.5
+# Paladin Replay Launcher 0.5.6
 
 Opens an Age of Empires IV replay and puts your game settings back exactly as they were
 afterwards.
+
+## New in 0.5.6
+
+- **Installing it now tells Paladin straight away, instead of waiting for your next capture.** Paladin
+  only ever found out what your launcher could do at the end of a successful capture, so the moment
+  after you installed a newer one the page still described the older one — and could tell you to
+  install a launcher you had just installed. Installing now says so immediately, and if you already
+  installed it, the page offers an **"Already installed it? Tell Paladin"** link that takes about as
+  long as a click. Nothing is captured, no replay is opened, and nothing about your game is touched.
 
 ## New in 0.5.5
 

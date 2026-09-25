@@ -34,6 +34,27 @@ public static class PaladinUri
     /// </summary>
     public const string DeepAction = "deep";
 
+    /// <summary>
+    /// 892 - "ARE YOU THERE, AND WHAT CAN YOU DO?" - paladin://hello, carrying nothing.
+    ///
+    /// THE GAP THIS FILLS. 869's callback is how the site learns what an install can do, and it has
+    /// only ever ridden on the END OF A SUCCESSFUL CAPTURE. So a reader who installs a new launcher
+    /// and goes back to the site is still described by whatever their LAST capture announced -- and
+    /// after 890 that is the difference between being offered a one-click retry and being told to
+    /// update the launcher they just updated. The owner installed 0.5.5 and the page went on saying
+    /// "get it", correctly and uselessly, because nothing had happened that announces.
+    ///
+    /// Capturing a game purely to update a record is a five-minute answer to a question that takes a
+    /// tenth of a second. This is that question: the launcher opens the callback URL and exits. No
+    /// replay, no game, no Shield, no session folder, nothing to restore.
+    ///
+    /// IT TELLS THE SITE NOTHING THE SITE COULD NOT ALREADY BE TOLD. Same two parameters, same
+    /// origin, same one-time read -- only the moment differs. And it stays honest about the one thing
+    /// a web page cannot do: if no launcher is registered, clicking it does nothing at all, exactly as
+    /// every other paladin:// link does nothing, and the page must not pretend otherwise.
+    /// </summary>
+    public const string HelloAction = "hello";
+
     /// <summary>A Paladin game id is a positive number of at most this many digits (the Worker's route is \d{1,15}).</summary>
     public const int MaxGameIdDigits = 15;
 
@@ -70,6 +91,17 @@ public static class PaladinUri
         public static ParseResult Fail(string error) => new(false, null, error);
         public static ParseResult Success(ReplayRequest request, string action = ReplayAction, long? gameId = null, bool thenWatch = false, bool force = false) =>
             new(true, request, null, action, gameId, thenWatch, force);
+
+        /// <summary>
+        /// 892 - a good link with NO REQUEST IN IT, which is the only one of those.
+        ///
+        /// Every caller that reaches for `Request` must therefore check `IsHello` first, or check
+        /// `Request` for null, which the one caller that can see a hello does.
+        /// </summary>
+        public static ParseResult Hello() => new(true, null, null, HelloAction);
+
+        /// <summary>892 - paladin://hello: announce what this build can do, and do nothing else.</summary>
+        public bool IsHello => Ok && Action == HelloAction;
 
         public bool IsDump => Ok && Action == DumpAction;
 
@@ -127,11 +159,16 @@ public static class PaladinUri
         if (string.IsNullOrEmpty(action))
             action = uri.AbsolutePath.Trim('/').Split('/').FirstOrDefault() ?? "";
 
+        // 892 - a hello carries nothing, so it is answered before a single line of replay handling
+        // that could only refuse it for lacking a replay it was never meant to carry.
+        if (string.Equals(action, HelloAction, StringComparison.OrdinalIgnoreCase))
+            return ParseResult.Hello();
+
         var isReplay = string.Equals(action, ReplayAction, StringComparison.OrdinalIgnoreCase);
         var isDump = string.Equals(action, DumpAction, StringComparison.OrdinalIgnoreCase);
         var isDeep = string.Equals(action, DeepAction, StringComparison.OrdinalIgnoreCase);
         if (!isReplay && !isDump && !isDeep)
-            return ParseResult.Fail($"Unsupported paladin action '{action}'. Only '{ReplayAction}', '{DumpAction}' and '{DeepAction}' are implemented.");
+            return ParseResult.Fail($"Unsupported paladin action '{action}'. Only '{ReplayAction}', '{DumpAction}', '{DeepAction}' and '{HelloAction}' are implemented.");
 
         var actionName = isDeep ? DeepAction : isDump ? DumpAction : ReplayAction;
         var query = HttpUtility.ParseQueryString(uri.Query);

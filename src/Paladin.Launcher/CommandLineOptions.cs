@@ -11,6 +11,8 @@ public enum Command { Launch, Observe, Recover, Doctor, Install, Uninstall, Regi
     DumpUpload,
     /// <summary>§867 "Deep Capture": --deep &lt;gameId&gt; or a paladin://deep link. The one capture a normal user starts.</summary>
     Deep,
+    /// <summary>892 - paladin://hello: announce this build's capabilities to the site and exit. No replay, no game.</summary>
+    Hello,
 }
 
 public sealed class CommandLineOptions
@@ -68,6 +70,9 @@ public sealed class CommandLineOptions
                 options.Command =
                     string.Equals(linkAction, Paladin.Core.Protocol.PaladinUri.DeepAction, StringComparison.Ordinal) ? Command.Deep
                     : string.Equals(linkAction, Paladin.Core.Protocol.PaladinUri.DumpAction, StringComparison.Ordinal) ? Command.Dump
+                    // 892 - a hello is NOT a launch. It names no replay, so falling through to one
+                    // would answer "No replay was supplied" to a link that was never about a replay.
+                    : string.Equals(linkAction, Paladin.Core.Protocol.PaladinUri.HelloAction, StringComparison.Ordinal) ? Command.Hello
                     : Command.Launch;
                 continue;
             }

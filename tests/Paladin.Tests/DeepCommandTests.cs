@@ -145,6 +145,36 @@ public static class DeepCommandTests
                 LauncherCallback.UrlFor("https://paladin.odinmaycall.com/", "0.5.3", withoutRetention)!);
         });
 
+        Test("892 - paladin://hello parses, carries no replay, and is not a launch", () =>
+        {
+            // The gap it fills: 869's callback has only ever ridden on the end of a SUCCESSFUL
+            // CAPTURE, so a reader who installs a newer launcher is still described by whatever
+            // their last capture announced. After 890 that is the difference between a one-click
+            // retry and being told to update the launcher they have just updated.
+            var hello = PaladinUri.Parse("paladin://hello");
+            True(hello.Ok, "a hello is a good link");
+            True(hello.IsHello, "and it is recognisably a hello");
+            True(hello.Request is null, "carrying NO replay, which no other successful parse does");
+            False(hello.IsDeep || hello.IsDump || hello.IsCapture, "and it is not a capture");
+
+            // The ROUTING half -- that Command.Hello is chosen rather than Command.Launch -- lives in
+            // Paladin.Launcher, which this project does not reference by design. What is testable
+            // here is the fact the routing keys on, and ActionOf is exactly what it reads.
+            Equal(PaladinUri.HelloAction, PaladinUri.ActionOf("paladin://hello"));
+
+            // A trailing slash is what a browser often hands over, and a query it does not
+            // understand is not a reason to refuse an announcement.
+            True(PaladinUri.Parse("paladin://hello/").IsHello, "a trailing slash is still a hello");
+            True(PaladinUri.Parse("paladin://hello?from=page").IsHello, "and an unknown query is ignored, not refused");
+        });
+
+        Test("892 - an action nobody implements still fails, and now names hello among the ones that exist", () =>
+        {
+            var bad = PaladinUri.Parse("paladin://greetings");
+            False(bad.Ok, "an unknown action is refused");
+            True(bad.Error!.Contains("hello", StringComparison.Ordinal), $"and the message lists it: {bad.Error}");
+        });
+
         Test("the world dump's path never survives into the announcement", () =>
         {
             Equal("https://paladin.odinmaycall.com/", LauncherCallback.OriginOf("https://paladin.odinmaycall.com/api/world/"));

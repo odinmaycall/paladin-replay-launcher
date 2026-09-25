@@ -1,4 +1,5 @@
-﻿using System.Reflection;
+﻿using System.Diagnostics;
+using System.Reflection;
 using System.Runtime.Versioning;
 using Paladin.Core.Config;
 using Paladin.Core.Dump;
@@ -113,7 +114,31 @@ internal static class Program
                 // A double-click has no console to answer prompts from, so it answers them itself.
                 var installUi = new ConsoleShieldUi(assumeYes: true);
                 var ok = Installer.Install(installLog, installUi);
-                if (ok) installUi.Ok(StartupAction.InstalledMessage);
+                if (ok)
+                {
+                    /**
+                     * 892 - AND IT TELLS PALADIN AT ONCE, because this is the moment the reader is
+                     * standing here and the browser is already open behind this window.
+                     *
+                     * Without it the site's picture of this machine stays as old as the last capture,
+                     * so someone who has just installed a newer launcher is told to install a newer
+                     * launcher. paladin://hello exists for the same job on demand; doing it here means
+                     * the common path needs no click at all.
+                     *
+                     * A failure is only a note. The install has already succeeded, and capturing any
+                     * game announces too, so nothing is lost but a few seconds of the site being out
+                     * of date.
+                     */
+                    installUi.Ok(StartupAction.InstalledMessage);
+                    // The configured deploy is not loaded yet at this point in Main, and for a
+                    // DOUBLE-CLICKED DOWNLOAD it would be the default anyway: this branch is only
+                    // reached by a bare run, which is a real reader installing a real download. A
+                    // build aimed at a test deploy announces through paladin://hello, which does
+                    // read the config.
+                    var announce = LauncherCallback.UrlFor(null, AppVersion());
+                    if (announce is not null && !OpenInBrowser(announce, installLog))
+                        installUi.Note("Could not open your browser to tell Paladin what this launcher can do; capturing any game will tell it.");
+                }
                 return ok ? ExitCodes.Ok : ExitCodes.UnexpectedError;
             }
             // Already the installed copy: say what it is, then the usual help.
@@ -219,6 +244,9 @@ internal static class Program
 
                 case Command.DumpUpload:
                     return await RunDumpUpload(options, config, log, ui, store);
+
+                case Command.Hello:
+                    return RunHello(config, log, ui);
 
                 default:
                     CommandLineOptions.PrintUsage(AppVersion());
@@ -450,6 +478,61 @@ internal static class Program
     {
         var playback = Aoe4Locator.Detect(config, log).PlaybackPath ?? config.PlaybackSubfolder;
         return Path.Combine(playback, $"AgeIV_Replay_{gameId}");
+    }
+
+    /**
+     * 892 - SAY WHAT THIS BUILD CAN DO, AND STOP.
+     *
+     * 869's callback has only ever ridden on the end of a successful capture, so the site's picture of
+     * an install is as old as that install's last capture. After 890 that gap has teeth: 0.5.5 was
+     * installed and the page went on saying "get the launcher", correctly, because nothing that
+     * announces had happened since 0.5.4. The honest fix is not to capture a game to update a record.
+     *
+     * The whole action is: build the same URL a capture would have opened, and open it. No replay, no
+     * game, no Shield, no session folder, no restore -- so there is nothing here that can fail in a way
+     * that costs the user anything.
+     *
+     * IT ANNOUNCES TO THE CONFIGURED DEPLOY, like every other announcement, so a test build pointed at
+     * a local Worker never tells production it is here.
+     */
+    private static int RunHello(LauncherConfig config, PaladinLog log, IShieldUi ui)
+    {
+        var url = LauncherCallback.UrlFor(config.DumpUploadBaseUrl, AppVersion());
+        if (url is null)
+        {
+            // Only reachable if this build announces nothing at all, which would itself be the bug.
+            ui.Fail("This build has no capabilities to announce.");
+            return ExitCodes.UnexpectedError;
+        }
+
+        ui.Ok($"Paladin Replay Launcher {AppVersion()} is installed.");
+        ui.Note("Telling Paladin what this launcher can do ...");
+        if (!OpenInBrowser(url, log))
+        {
+            // The announcement is the entire job, so failing to open it is a real failure here --
+            // unlike after a capture, where the capture itself has already landed.
+            ui.Fail("Could not open your browser to tell Paladin. Capturing any game will tell it instead.");
+            return ExitCodes.UnexpectedError;
+        }
+
+        ui.Ok("Told Paladin. You can close this window and go back to the page.");
+        return ExitCodes.Ok;
+    }
+
+    /// <summary>892 - open a URL in the reader's browser. Never throws: the caller decides what a failure means.</summary>
+    private static bool OpenInBrowser(string url, PaladinLog log)
+    {
+        try
+        {
+            using var process = Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+            log.Info($"Opened {url}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            log.Warn($"Could not open {url}: {ex.Message}");
+            return false;
+        }
     }
 
     private static ReplayRequest? ResolveRequest(CommandLineOptions options, IShieldUi ui)
