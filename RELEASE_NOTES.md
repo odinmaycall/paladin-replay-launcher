@@ -1,7 +1,17 @@
-# Paladin Replay Launcher 0.5.1
+# Paladin Replay Launcher 0.5.2
 
 Opens an Age of Empires IV replay and puts your game settings back exactly as they were
 afterwards.
+
+## New in 0.5.2
+
+- **Your replay is kept with Paladin, so the build order keeps working.** A capture reads what every
+  villager was doing, but the clock on each step, the Builders column and who placed each landmark
+  all come from the replay itself — and Microsoft stops handing replays out about three months
+  after the game. Deep Capture now keeps a copy of the replay it just played, at the one moment it
+  is certainly still available, and Paladin reads it with its own parser. Nothing you do changes;
+  the capture just stops going stale. If keeping it fails, the capture is still safe and the game
+  can be completed later without playing it again.
 
 ## New in 0.5.1
 

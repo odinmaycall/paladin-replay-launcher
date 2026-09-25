@@ -354,5 +354,72 @@ public static class DeepPreflightTests
             Equal("https://paladin.odinmaycall.com/", DeepUploader.OriginOf("").ToString());
             Equal("https://paladin.odinmaycall.com/", DeepUploader.OriginOf(null).ToString());
         });
+
+        // 879 - RETAINING THE REPLAY, which is what turns a sampler artifact into a trusted package.
+        //
+        // The build order's clocks, its Builders column and its landmark placements all come from the
+        // REPLAY's order stream, and Microsoft stops serving replays about three months after the
+        // game. So the launcher keeps the exact file it just played, at the one moment it is certainly
+        // still there, and Paladin parses it with its OWN parser rather than trusting anyone else's.
+        Suite("Deep replay retention");
+
+        Test("it posts to the replay route on the configured ORIGIN, never under /api/world/", () =>
+        {
+            // 871's bug, which got as far as launching a game: DumpUploadBaseUrl already ends in
+            // /api/world/, so anything appended to the ADDRESS rather than its origin lands on the SPA.
+            var uploader = new ReplayUploader("https://paladin.odinmaycall.com/api/world/", "0.5.2", new Core.Logging.PaladinLog(false));
+            Equal("https://paladin.odinmaycall.com/api/replay/253132683", uploader.TargetFor(253132683).ToString());
+            Equal("paladin.odinmaycall.com", uploader.Host);
+        });
+
+        Test("a test deploy still gets its own replays, so production is never hit by accident", () =>
+        {
+            var uploader = new ReplayUploader("https://test.paladin.pages.dev/api/world/", "0.5.2", new Core.Logging.PaladinLog(false));
+            Equal("https://test.paladin.pages.dev/api/replay/12345", uploader.TargetFor(12345).ToString());
+        });
+
+        Test("COMPRESSION IS REAL AND ROUND-TRIPS, because the stored bytes are these bytes", () =>
+        {
+            // Paladin retains the gzip member verbatim, in the same .rec.gz format its own bank uses,
+            // so what this produces is what is kept and later re-parsed.
+            var replay = new byte[200_000];
+            for (var i = 0; i < replay.Length; i++) replay[i] = (byte)(i % 251);
+            var gz = ReplayUploader.Compress(replay);
+
+            True(gz.Length > 2 && gz[0] == 0x1f && gz[1] == 0x8b, "it is a gzip member, which is what the Worker sniffs for");
+            True(gz.Length < replay.Length, $"and it actually compresses: {gz.Length} from {replay.Length}");
+
+            using var input = new MemoryStream(gz);
+            using var gunzip = new System.IO.Compression.GZipStream(input, System.IO.Compression.CompressionMode.Decompress);
+            using var output = new MemoryStream();
+            gunzip.CopyTo(output);
+            var back = output.ToArray();
+            Equal(replay.Length, back.Length);
+            True(back.AsSpan().SequenceEqual(replay), "byte for byte, or a re-parse would read different bytes than were played");
+        });
+
+        Test("THE WIRE CAP MATCHES THE WORKER'S, so a doomed body is never put on the wire", () =>
+        {
+            // Measured over 3,408 banked replays: worst compressed 1,579,711 bytes. The cap is 4 MiB.
+            Equal(4L * 1024 * 1024, ReplayUploader.WireCapBytes);
+            True(ReplayUploader.WireCapBytes > 1_579_711, "2.6x the largest replay ever banked");
+        });
+
+        Test("the reader is told what it is FOR, not what it is", () =>
+        {
+            var retaining = DeepConsoleText.RetainingReplay();
+            True(retaining.Contains("replay", StringComparison.OrdinalIgnoreCase), retaining);
+            False(retaining.Contains("gzip", StringComparison.OrdinalIgnoreCase), "no wire detail in a reader's line");
+
+            var done = DeepConsoleText.ReplayRetained(295_000, 1_318_624, true);
+            True(done.Contains("complete", StringComparison.OrdinalIgnoreCase), done);
+
+            var pending = DeepConsoleText.ReplayRetained(295_000, 1_318_624, false);
+            False(pending.Contains("complete", StringComparison.OrdinalIgnoreCase), "an unparsed one must not claim completeness");
+
+            var failed = DeepConsoleText.ReplayNotRetained("could not reach paladin.odinmaycall.com");
+            True(failed.Contains("capture is safe", StringComparison.OrdinalIgnoreCase), failed);
+            True(failed.Contains("partial", StringComparison.OrdinalIgnoreCase), "and names the state the game will show");
+        });
     }
 }

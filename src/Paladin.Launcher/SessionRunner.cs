@@ -78,6 +78,16 @@ public sealed class SessionRunner
     /// <summary>False when the caller has already printed its own banner (a dump's names the game, not the replay).</summary>
     public bool PrintHeader { get; init; } = true;
 
+    /// <summary>
+    /// 879 - where this run actually placed the replay, or null if it never got that far.
+    ///
+    /// Exposed because Deep Capture retains the replay with Paladin after the capture lands, and the
+    /// path has to be the one that was really used: the name gains a "_paladin" suffix when a file of
+    /// that name already existed in playback/, so re-deriving it from the game id would sometimes
+    /// point at one of the user's own replays instead of ours.
+    /// </summary>
+    public string? PreparedReplayPath { get; private set; }
+
     public SessionRunner(
         LauncherConfig config, PaladinLog log, IShieldUi ui, SessionStore store, ReplayProviderRegistry providers)
     {
@@ -239,6 +249,7 @@ public sealed class SessionRunner
 
             File.Copy(replay.LocalPath, placedReplay, overwrite: false);
             session.PreparedReplayPath = placedReplay;
+            PreparedReplayPath = placedReplay; // 879 - so the caller can retain the exact file it played.
             session.PreparedReplayOwnedByLauncher = true;
             _ui.Ok($"Replay placed in the AoE4 playback folder as '{replayName}'");
             _log.Info($"Placed replay at {placedReplay}");

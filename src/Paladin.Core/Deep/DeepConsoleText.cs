@@ -66,6 +66,24 @@ public static class DeepConsoleText
     public static string ShortGame(int window) =>
         $"This game ended before 15:00, so the capture runs to {Clock(window)} — the whole match.";
 
+    /// <summary>
+    /// §879 — the replay going up after the capture. Said in the reader's terms: what it is for, not
+    /// what it is. "Keeping the replay" is true and useful; "POSTing a gzipped .rec" is neither.
+    /// </summary>
+    public static string RetainingReplay() => "Keeping this game's replay with Paladin, so the build order stays readable after Microsoft drops it…";
+
+    public static string ReplayRetained(int wireBytes, int rawBytes, bool parsed) =>
+        parsed
+            ? $"Replay kept ({Kb(wireBytes)}, from {Kb(rawBytes)}) and read. This game's build order is complete."
+            : $"Replay kept ({Kb(wireBytes)}, from {Kb(rawBytes)}). Paladin will read it shortly.";
+
+    /// <summary>
+    /// §879 — a retention that failed is a WARNING, never an error: the capture already landed and was
+    /// accepted, and the replay can be sent again later without replaying the game.
+    /// </summary>
+    public static string ReplayNotRetained(string? why) =>
+        $"The capture is safe, but this game's replay could not be kept ({why ?? "unknown"}). Its build order will show as partial until it is.";
+
     public static string Captured(int samples, int first, int last) =>
         $"Captured {samples:N0} readings from {Clock(first)} to {Clock(last)}.";
 

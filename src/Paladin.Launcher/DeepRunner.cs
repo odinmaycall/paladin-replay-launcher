@@ -179,6 +179,30 @@ public sealed class DeepRunner
         //
         // ONLY ON SUCCESS. A failed capture has already said why in this window; yanking the reader's
         // browser to a page with nothing new on it would be the second unhelpful thing in a row.
+        /**
+         * §879 — AND THE REPLAY IS RETAINED, because this is the last moment it is certainly here.
+         *
+         * A sampler artifact alone is not the trusted result: the build order's clocks, its Builders
+         * column and its landmark placements all come from the REPLAY's order stream. Paladin can only
+         * parse a replay it holds, and Microsoft stops serving them about three months after the game,
+         * so a capture made today is permanently half-evidenced unless the replay goes up now.
+         *
+         * AFTER the capture and only on success. A game with no sampler is not made Deep by a replay,
+         * and uploading one for a failed capture would bank megabytes for nothing.
+         *
+         * NEVER FATAL. The capture has already landed and been accepted; if retention fails the game
+         * simply reports `partial` and can be completed later without replaying anything. So this
+         * neither changes the exit code nor stops the reader being taken to their build order.
+         */
+        if (Result is { Ok: true } && !DryRun && request.Upload && uploader is not null && runner.PreparedReplayPath is not null)
+        {
+            var replays = new ReplayUploader(_config.DumpUploadBaseUrl, _version, _log);
+            _ui.Note(DeepConsoleText.RetainingReplay());
+            var kept = await replays.UploadAsync(request.GameId, runner.PreparedReplayPath!, ct);
+            if (kept.Ok) _ui.Ok(DeepConsoleText.ReplayRetained(kept.WireBytes, kept.RawBytes, kept.Parsed));
+            else _ui.Warn(DeepConsoleText.ReplayNotRetained(kept.Error));
+        }
+
         if (Result is { Ok: true } && !DryRun) OpenResultPage(request.GameId);
 
         if (Result?.Failure is { } failed) return failed.ExitCode;
