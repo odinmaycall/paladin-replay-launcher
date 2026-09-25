@@ -1,7 +1,25 @@
-# Paladin Replay Launcher 0.5.4
+# Paladin Replay Launcher 0.5.5
 
 Opens an Age of Empires IV replay and puts your game settings back exactly as they were
 afterwards.
+
+## New in 0.5.5
+
+- **Paladin only offers to finish a capture when this launcher can actually finish it.** Finishing
+  an unfinished capture needs two things at once: this launcher has to accept a game Paladin
+  already has, and it has to keep the replay afterwards. Until now it claimed both with one word,
+  so a build that could do the first but not the second still said it was ready — and the page
+  offered to finish a capture that would come back just as unfinished, for another five minutes of
+  replay, as often as you were willing to try. This build says the two things separately, and a
+  launcher that cannot do both is told to update instead of being sent round again.
+- **Keeping your replay now genuinely works, and in 0.5.2 and 0.5.3 it never did.** Keeping the
+  replay arrived in 0.5.2 and failed every time: the launcher removed the replay from your game
+  folder on its way out and only then tried to send it, so every capture announced that it was
+  keeping your replay and then reported that the file could not be found. The capture itself was
+  always safe — the game simply stayed unfinished. This was fixed in the build published as 0.5.4,
+  whose notes were written before the fix landed and so never mentioned it; it is named here
+  instead. If you captured anything with 0.5.2 or 0.5.3, open those games on Paladin and finish
+  them in one click. You do not need to watch them again.
 
 ## New in 0.5.4
 
