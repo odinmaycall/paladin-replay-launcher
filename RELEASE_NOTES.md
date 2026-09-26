@@ -1,7 +1,16 @@
-# Paladin Replay Launcher 0.5.7
+# Paladin Replay Launcher 0.5.8
 
 Opens an Age of Empires IV replay and puts your game settings back exactly as they were
 afterwards.
+
+## New in 0.5.8
+
+- **A capture now also records the map it was played on, as it looked at the very start.** While the
+  replay is held still at the beginning, the launcher takes one reading of where everything on the
+  map is: every tree, the gold, stone and berries, and the sheep, deer, boar and wolves before any
+  of them have moved or been hunted. Paladin used to need a second, separate run to get that, and by
+  then the animals had wandered. It adds about seven seconds to a capture, changes nothing about the
+  capture itself, and if it fails the capture is completely unaffected.
 
 ## New in 0.5.7
 

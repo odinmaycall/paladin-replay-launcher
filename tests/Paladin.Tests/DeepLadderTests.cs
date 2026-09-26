@@ -24,6 +24,47 @@ public static class DeepLadderTests
     {
         Suite("Deep ladder");
 
+        Test("897 - the opening snapshot runs frozen, and CANNOT cost the capture", () =>
+        {
+            /**
+             * It is sent as part of the same bootstrap, between the first Deep sample and the thaw, so
+             * the world it records is the OPENING world: sim rate is still 0, nothing has moved, and
+             * wildlife is where the match started rather than wherever it wandered by the time a
+             * separate dump run reached it.
+             *
+             * THE SAFETY PROPERTY IS THE POINT. A capture that loses a snapshot line must still be a
+             * good capture, so WSNAP is called through pcall and its functions are deliberately NOT in
+             * V5WHO. V5WHO gates the whole run - a name in that list turns a dropped line into a D1
+             * failure and destroys an otherwise valid capture, which is exactly what must not happen
+             * for an optional extra.
+             */
+            var all = string.Join("\n", DeepLadder.Definitions);
+
+            True(all.Contains("pcall(SAMPLE5) pcall(WSNAP)", StringComparison.Ordinal),
+                "the snapshot runs AFTER the first sample and BEFORE the thaw");
+            // NOT IndexOf against IndexOf: SQ2 opens with an early-return branch that thaws, so the
+            // FIRST V9T(64) in the text is not the one the snapshot must precede. The thaw that matters
+            // is the last one on the line, at the end of the normal path.
+            True(all.IndexOf("pcall(WSNAP)", StringComparison.Ordinal) < all.LastIndexOf("V9T(64)", StringComparison.Ordinal),
+                "and strictly before the thaw, so it sees a frozen world");
+
+            False(all.Contains("V5Z(\"WSNAP\",WSNAP)", StringComparison.Ordinal),
+                "WSNAP must NOT be in the self-check: a dropped snapshot line may not fail the capture");
+            False(all.Contains("V5Z(\"WROW\",WROW)", StringComparison.Ordinal), "nor WROW");
+
+            // The row shape is the EXISTING world-dump format, so the banker that already reads dumps
+            // reads this unchanged: PALADIN2|index|id|squad|blueprint|x|y|z|owner.
+            True(all.Contains("print(\"PALADIN2|\"", StringComparison.Ordinal), "rows use the world dump's own marker");
+            True(all.Contains("WQ(e)", StringComparison.Ordinal) && all.Contains("WO(e)", StringComparison.Ordinal),
+                "carrying squad and owner, which the banker needs for town-centre ownership");
+
+            // An EXCLUDE list, not an include list. Trees have no common blueprint prefix, so an
+            // include list would silently drop a new biome's trees; this keeps anything it does not
+            // recognise and drops only the dynamic and debug families.
+            foreach (var skip in new[] { "_dummy_minimap_icon", "unit_", "wpn_", "dynamic_spawn_marker", "gaia_food_" })
+                True(all.Contains(skip, StringComparison.Ordinal), $"{skip} is excluded");
+        });
+
         Test("895 - the sampler prints the PLAYER-LEVEL allocation, which the per-squad rows cannot see", () =>
         {
             /**
@@ -59,7 +100,7 @@ public static class DeepLadderTests
         Test("the sampler's definitions ship with the launcher and every line is inside the proven cap", () =>
         {
             var defs = DeepLadder.Definitions;
-            Equal(16, defs.Count, "the bootstrap's sixteen definition lines (895 added the player aggregate)");
+            Equal(21, defs.Count, "16 sampler lines + 895's player aggregate + 897's five snapshot lines");
             True(defs.All(l => l.Length <= DeepLadder.MaxLine), "a line over 411 characters is truncated by the console, which is a fatal syntax error");
             True(defs.Any(l => l.Contains("function SAMPLE5()", StringComparison.Ordinal)), "SAMPLE5 must be defined");
             True(defs.Any(l => l.Contains("function REG5(", StringComparison.Ordinal) || l.Contains("REG5", StringComparison.Ordinal)), "REG5 must be defined");
@@ -80,7 +121,7 @@ public static class DeepLadderTests
         Test("the whole bootstrap is freeze, definitions, self-check, THEN go — in that order", () =>
         {
             var all = DeepLadder.AllLines();
-            Equal(19, all.Count, "freeze + 16 definitions + self-check + SQ()");
+            Equal(24, all.Count, "freeze + 21 definitions + self-check + SQ()");
             True(all[0].Contains(DeepLadder.FreezeMarker, StringComparison.Ordinal), "the freeze is FIRST, so the definitions cost no game time");
             True(all[^2].Contains(DeepLadder.AllOkMarker, StringComparison.Ordinal), "the self-check is second to last");
             Equal("SQ()", all[^1], "and sampling is committed to LAST, only after the check");
