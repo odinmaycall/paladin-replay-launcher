@@ -1,7 +1,17 @@
-# Paladin Replay Launcher 0.5.6
+# Paladin Replay Launcher 0.5.7
 
 Opens an Age of Empires IV replay and puts your game settings back exactly as they were
 afterwards.
+
+## New in 0.5.7
+
+- **A capture now also records what the game itself says your villagers are doing.** Until now a
+  capture worked out each villager's job by asking about that villager — which the game answers with
+  "nothing" while they are still walking to a tree or a stone outcropping. That is why a build order
+  sometimes showed a group of villagers as unresolved for a minute before they appeared on a
+  resource. The game keeps its own count, the one your resource panel shows, and a capture now
+  records that alongside the per-villager readings so the two can be lined up. Nothing changes in how
+  you capture, and a capture takes no longer.
 
 ## New in 0.5.6
 

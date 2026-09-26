@@ -1,4 +1,4 @@
-using System.IO.Compression;
+﻿using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 using Paladin.Core.Deep;
@@ -24,10 +24,42 @@ public static class DeepLadderTests
     {
         Suite("Deep ladder");
 
+        Test("895 - the sampler prints the PLAYER-LEVEL allocation, which the per-squad rows cannot see", () =>
+        {
+            /**
+             * WHY THIS ROW EXISTS. V5K already asks Squad_IsGatheringResourceType per villager - but
+             * that predicate is FALSE while a villager is walking to the resource, which is why a
+             * build order shows "unresolved" for a group on its way to a stone outcropping. Measured
+             * on game 253123900 at 3:01: nine villagers unresolved in the capture, while the game's
+             * own HUD and Player_GetNumGatheringSquads both said nine on stone.
+             *
+             * The two calls answer different questions. This row carries the second answer, so the
+             * reduction has a known total to attribute the walkers to instead of guessing.
+             */
+            var all = string.Join("\n", DeepLadder.Definitions);
+
+            True(all.Contains("PALADIN5_VP|", StringComparison.Ordinal), "the player row has its own marker");
+            True(all.Contains("Player_GetNumGatheringSquads", StringComparison.Ordinal), "and it is the player-level aggregate");
+
+            // THE FIELD ORDER IS THE CONTRACT the site parses: t | playerIndex | food | wood | gold |
+            // stone. Those indices are not guessable - 2/8/3/7 - and V5K has used the same four since
+            // the sampler was written, so the two must not drift apart.
+            True(all.Contains("V5PG(p,2)..\"|\"..V5PG(p,8)..\"|\"..V5PG(p,3)..\"|\"..V5PG(p,7)", StringComparison.Ordinal),
+                "food, wood, gold, stone - the order V5C already carries the CARRIED amounts in");
+
+            // Guarded, because a syntax error in that console ends the game and the capture with it.
+            True(all.Contains("pcall(Player_GetNumGatheringSquads", StringComparison.Ordinal), "every call is pcall-guarded");
+
+            // And the self-check must cover them, or a paste that drops this line stops being noticed
+            // - which is the exact failure V5WHO was written for.
+            True(all.Contains("V5Z(\"V5PG\",V5PG)", StringComparison.Ordinal), "V5PG is in the self-check");
+            True(all.Contains("V5Z(\"V5VP\",V5VP)", StringComparison.Ordinal), "V5VP is in the self-check");
+        });
+
         Test("the sampler's definitions ship with the launcher and every line is inside the proven cap", () =>
         {
             var defs = DeepLadder.Definitions;
-            Equal(15, defs.Count, "the bootstrap's fifteen definition lines");
+            Equal(16, defs.Count, "the bootstrap's sixteen definition lines (895 added the player aggregate)");
             True(defs.All(l => l.Length <= DeepLadder.MaxLine), "a line over 411 characters is truncated by the console, which is a fatal syntax error");
             True(defs.Any(l => l.Contains("function SAMPLE5()", StringComparison.Ordinal)), "SAMPLE5 must be defined");
             True(defs.Any(l => l.Contains("function REG5(", StringComparison.Ordinal) || l.Contains("REG5", StringComparison.Ordinal)), "REG5 must be defined");
@@ -48,7 +80,7 @@ public static class DeepLadderTests
         Test("the whole bootstrap is freeze, definitions, self-check, THEN go — in that order", () =>
         {
             var all = DeepLadder.AllLines();
-            Equal(18, all.Count, "freeze + 15 definitions + self-check + SQ()");
+            Equal(19, all.Count, "freeze + 16 definitions + self-check + SQ()");
             True(all[0].Contains(DeepLadder.FreezeMarker, StringComparison.Ordinal), "the freeze is FIRST, so the definitions cost no game time");
             True(all[^2].Contains(DeepLadder.AllOkMarker, StringComparison.Ordinal), "the self-check is second to last");
             Equal("SQ()", all[^1], "and sampling is committed to LAST, only after the check");
