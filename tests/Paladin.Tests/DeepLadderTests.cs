@@ -24,6 +24,42 @@ public static class DeepLadderTests
     {
         Suite("Deep ladder");
 
+        Test("899 - the terrain grid, and the THIRD category a dropped optional line needs", () =>
+        {
+            /**
+             * 897 put WSNAP outside V5WHO so a dropped line could not fail a capture. A real run then
+             * showed the cost of that: the terrain probe's lines were dropped, pcall(TSNAP,8) returned
+             * instantly, the capture reported success, and NOTHING anywhere said the snapshot had not
+             * happened. Putting them IN V5WHO is worse - the next run died with D1 over an optional
+             * extra.
+             *
+             * So there are three categories now, not two: gated (V5WHO, a drop fails the run),
+             * REPORTED (V5OPT, a drop prints its own name and the capture carries on), and unlisted.
+             * Optional evidence belongs in the middle one.
+             */
+            var all = string.Join("\n", DeepLadder.Definitions);
+
+            True(all.Contains("PALADIN2_TER|", StringComparison.Ordinal), "terrain rows have their own marker");
+            True(all.Contains("World_GetTerrainCellType", StringComparison.Ordinal), "0 Sky, 1 Land, 2 Water");
+            True(all.Contains("World_GetHeightAt", StringComparison.Ordinal), "and the height field");
+            True(all.Contains("pcall(TSNAP,8)", StringComparison.Ordinal), "8-unit grid, guarded");
+
+            // The report is printed BEFORE the optional work, so a drop is named even if the call
+            // that follows does nothing at all.
+            True(all.IndexOf("PALADIN5_OPT|", StringComparison.Ordinal) < all.IndexOf("pcall(WSNAP)", StringComparison.Ordinal),
+                "the optional-helper report comes before the optional calls");
+            // Named in the report line itself, so a drop prints the name of what went missing.
+            foreach (var fn in new[] { "WSNAP", "WROW", "TSNAP", "TROW" })
+                True(all.Contains("V5OPT", StringComparison.Ordinal) && all.Contains(fn, StringComparison.Ordinal), $"{fn} is reported");
+
+            // And still NOT gated. V5WHO decides whether the capture may run at all, so an optional
+            // extra in that list turns a dropped line into a dead capture - which is exactly what a
+            // real run did before this test existed.
+            var w3 = DeepLadder.Definitions.First(l => l.Contains("function V5W3", StringComparison.Ordinal));
+            foreach (var fn in new[] { "WSNAP", "TSNAP", "WROW", "TROW" })
+                False(w3.Contains(fn, StringComparison.Ordinal), $"{fn} must not gate the run");
+        });
+
         Test("897 - the opening snapshot runs frozen, and CANNOT cost the capture", () =>
         {
             /**
@@ -40,17 +76,22 @@ public static class DeepLadderTests
              */
             var all = string.Join("\n", DeepLadder.Definitions);
 
-            True(all.Contains("pcall(SAMPLE5) pcall(WSNAP)", StringComparison.Ordinal),
-                "the snapshot runs AFTER the first sample and BEFORE the thaw");
+            // ORDER, not adjacency: 899 put the optional-helper report between these two, and the
+            // property that matters is the sequence - first sample, then snapshot, then thaw.
+            True(all.IndexOf("pcall(SAMPLE5)", StringComparison.Ordinal) < all.IndexOf("pcall(WSNAP)", StringComparison.Ordinal),
+                "the snapshot runs AFTER the first sample");
             // NOT IndexOf against IndexOf: SQ2 opens with an early-return branch that thaws, so the
             // FIRST V9T(64) in the text is not the one the snapshot must precede. The thaw that matters
             // is the last one on the line, at the end of the normal path.
             True(all.IndexOf("pcall(WSNAP)", StringComparison.Ordinal) < all.LastIndexOf("V9T(64)", StringComparison.Ordinal),
                 "and strictly before the thaw, so it sees a frozen world");
 
-            False(all.Contains("V5Z(\"WSNAP\",WSNAP)", StringComparison.Ordinal),
-                "WSNAP must NOT be in the self-check: a dropped snapshot line may not fail the capture");
-            False(all.Contains("V5Z(\"WROW\",WROW)", StringComparison.Ordinal), "nor WROW");
+            // 899 - checked against the GATED list itself, not the whole text: V5OPT now reports the
+            // same names, so "does V5Z(\"WSNAP\") appear anywhere" can no longer tell the two apart.
+            var gated = DeepLadder.Definitions.First(l => l.Contains("function V5W3", StringComparison.Ordinal));
+            False(gated.Contains("WSNAP", StringComparison.Ordinal),
+                "WSNAP must not gate the run: a dropped snapshot line may not fail the capture");
+            False(gated.Contains("WROW", StringComparison.Ordinal), "nor WROW");
 
             // The row shape is the EXISTING world-dump format, so the banker that already reads dumps
             // reads this unchanged: PALADIN2|index|id|squad|blueprint|x|y|z|owner.
@@ -100,7 +141,7 @@ public static class DeepLadderTests
         Test("the sampler's definitions ship with the launcher and every line is inside the proven cap", () =>
         {
             var defs = DeepLadder.Definitions;
-            Equal(21, defs.Count, "16 sampler lines + 895's player aggregate + 897's five snapshot lines");
+            Equal(25, defs.Count, "sampler + 895 aggregate + 897 snapshot + 899 terrain and the optional-helper report");
             True(defs.All(l => l.Length <= DeepLadder.MaxLine), "a line over 411 characters is truncated by the console, which is a fatal syntax error");
             True(defs.Any(l => l.Contains("function SAMPLE5()", StringComparison.Ordinal)), "SAMPLE5 must be defined");
             True(defs.Any(l => l.Contains("function REG5(", StringComparison.Ordinal) || l.Contains("REG5", StringComparison.Ordinal)), "REG5 must be defined");
@@ -121,7 +162,7 @@ public static class DeepLadderTests
         Test("the whole bootstrap is freeze, definitions, self-check, THEN go — in that order", () =>
         {
             var all = DeepLadder.AllLines();
-            Equal(24, all.Count, "freeze + 21 definitions + self-check + SQ()");
+            Equal(28, all.Count, "freeze + 25 definitions + self-check + SQ()");
             True(all[0].Contains(DeepLadder.FreezeMarker, StringComparison.Ordinal), "the freeze is FIRST, so the definitions cost no game time");
             True(all[^2].Contains(DeepLadder.AllOkMarker, StringComparison.Ordinal), "the self-check is second to last");
             Equal("SQ()", all[^1], "and sampling is committed to LAST, only after the check");

@@ -1,4 +1,21 @@
-# Paladin Replay Launcher 0.5.8
+# Paladin Replay Launcher 0.5.9
+
+Opens an Age of Empires IV replay and puts your game settings back exactly as they were
+afterwards.
+
+## New in 0.5.9
+
+- **The map reading now includes the ground itself.** Alongside where everything stood at the start,
+  a capture now records the shape of the land: which squares are water, and how high the ground is
+  across the whole map. That is what lets Paladin draw a real map underneath your build order instead
+  of scattering trees on an empty background. It takes about four more seconds and adds roughly
+  thirteen kilobytes.
+- **And a capture now says when part of it went missing.** These map readings are optional by design:
+  if one of the lines Paladin types into the game gets lost, the capture itself must still be good.
+  Until now that meant a lost line simply did nothing and said nothing. A capture now reports which
+  parts it could not set up, so a missing map is visible instead of silent.
+
+## New in 0.5.8
 
 Opens an Age of Empires IV replay and puts your game settings back exactly as they were
 afterwards.
