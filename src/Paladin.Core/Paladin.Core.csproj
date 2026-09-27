@@ -10,5 +10,6 @@
       paste line DeepLadder exists to catch.
     -->
     <EmbeddedResource Include="Deep\sampler-v5.txt" />
+    <EmbeddedResource Include="Deep\sampler-v6.txt" />
   </ItemGroup>
 </Project>

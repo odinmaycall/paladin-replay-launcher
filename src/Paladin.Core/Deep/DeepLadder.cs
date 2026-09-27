@@ -57,7 +57,7 @@ public static class DeepLadder
     public const string NoFunctionMarker = "PALADIN5_NOFN";
 
     /// <summary>A villager row. `PALADIN5_VA|&lt;gameTime&gt;|...`, thirteen fields.</summary>
-    public const string SampleMarker = "PALADIN5_VA";
+    public const string SampleMarker = "PALADIN6_VA";
 
     /// <summary>The sampler registered its interval and the simulation is thawed.</summary>
     public const string SquadDoneMarker = "PALADIN3_SQ_DONE";
@@ -167,7 +167,7 @@ public static class DeepLadder
     private static IReadOnlyList<string> LoadDefinitions()
     {
         var assembly = Assembly.GetExecutingAssembly();
-        var name = assembly.GetManifestResourceNames().FirstOrDefault(n => n.EndsWith("sampler-v5.txt", StringComparison.Ordinal))
+        var name = assembly.GetManifestResourceNames().FirstOrDefault(n => n.EndsWith("sampler-v6.txt", StringComparison.Ordinal))
             ?? throw new InvalidOperationException("The Deep sampler resource is missing from the assembly.");
         using var stream = assembly.GetManifestResourceStream(name)!;
         using var reader = new StreamReader(stream);

@@ -256,8 +256,9 @@ public sealed class DeepSession
         //    the loop rather than re-queried, so a repair costs exactly one extra self-check.
         for (var repair = 0; repair <= Math.Max(0, _options.RepairAttempts); repair++)
         {
-            var missing = await CheckAsync(ct);
-            if (missing is null) return DeepFailures.BootstrapLost("the sampler's self-check never answered");
+            var missing = await CheckWithRetryAsync(ct);
+            if (missing is null) return DeepFailures.BootstrapLost(
+                $"the sampler's self-check never answered after {SelfCheckTries} attempts");
 
             if (missing.Count == 0)
             {
@@ -317,6 +318,30 @@ public sealed class DeepSession
     /// Ask the sampler whether it is complete. Returns the missing helper names (empty when all landed)
     /// or null when the check itself never answered.
     /// </summary>
+    /// <summary>
+    /// 916 - HOW MANY TIMES THE SELF-CHECK MAY BE ASKED. A self-check that never answers is far more
+    /// often a dropped paste than a broken sampler.
+    ///
+    /// Measured: one of three v6 bootstraps died here, and the session log had already warned "This
+    /// process has no console window to own the clipboard with; the clipboard may refuse the paste
+    /// path". Every other guarded line gets <see cref="ConsoleDriver.TriesPerLine"/> attempts; this
+    /// one - the single line whose loss kills a fifteen-minute capture - got exactly one. A retry
+    /// costs one console line and one DefWait.
+    /// </summary>
+    private const int SelfCheckTries = 3;
+
+    /// <summary>Ask the self-check, and ask again if it does not answer at all.</summary>
+    private async Task<IReadOnlyList<string>?> CheckWithRetryAsync(CancellationToken ct)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            var answer = await CheckAsync(ct);
+            if (answer is not null) return answer;
+            if (attempt >= SelfCheckTries) return null;
+            _diag?.Info($"The self-check did not answer (attempt {attempt} of {SelfCheckTries}); asking again.");
+        }
+    }
+
     private async Task<IReadOnlyList<string>?> CheckAsync(CancellationToken ct)
     {
         var from = _log.Refresh();

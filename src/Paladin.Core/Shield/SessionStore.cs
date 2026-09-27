@@ -114,13 +114,37 @@ public sealed class SessionStore
             .OrderBy(s => s.StartedUtc)
             .ToList();
 
-    /// <summary>Removes completed session folders beyond the keep count. Pending ones are never removed.</summary>
+    /// <summary>Does this session hold a Deep capture's evidence, which is irreplaceable?</summary>
+    private bool HoldsDeepEvidence(string sessionId)
+    {
+        try
+        {
+            return File.Exists(Path.Combine(SessionDirectory(sessionId), "deep", "evidence.txt"));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return true;   // cannot tell: keep it. Never delete evidence on a guess.
+        }
+    }
+
+    /// <summary>
+    /// Removes completed session folders beyond the keep count. Pending ones are never removed, and
+    /// neither is one holding a Deep capture.
+    ///
+    /// 916 - KeepRecentSessions is documented as post-mortem diagnostics and defaults to 10. A Deep
+    /// capture's evidence.txt is not diagnostics: it is the ONLY per-villager record that exists. The
+    /// published artifact keeps aggregated counts and no rows, so once the evidence is gone the only
+    /// way to re-derive anything is to replay the game. Three captures in one evening were enough to
+    /// evict an earlier game's evidence entirely, and a bulk run would destroy its own inputs after
+    /// ten games. A capture folder is therefore kept regardless of the count.
+    /// </summary>
     public void Prune(int keepRecent)
     {
         var completed = AllSessions()
             .Where(s => !s.RestorePending && s.Outcome != SessionOutcome.RestoreFailed)
             .OrderByDescending(s => s.StartedUtc)
             .Skip(Math.Max(0, keepRecent))
+            .Where(s => !HoldsDeepEvidence(s.SessionId))
             .ToList();
 
         foreach (var session in completed)
