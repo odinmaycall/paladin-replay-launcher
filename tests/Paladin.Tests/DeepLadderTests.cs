@@ -136,12 +136,16 @@ public static class DeepLadderTests
             // - which is the exact failure V5WHO was written for.
             True(all.Contains("V5Z(\"V5PG\",V5PG)", StringComparison.Ordinal), "V5PG is in the self-check");
             True(all.Contains("V5Z(\"V5VP\",V5VP)", StringComparison.Ordinal), "V5VP is in the self-check");
+            // 916 - the two fields the frozen v6 row adds. A paste that drops either must VOID the
+            // capture rather than bank a column of "-", so both belong in the gate, not beside it.
+            True(all.Contains("V5Z(\"V5F\",V5F)", StringComparison.Ordinal), "V5F (Squad_IsAttacking) is in the self-check");
+            True(all.Contains("V5Z(\"V5XZ\",V5XZ)", StringComparison.Ordinal), "V5XZ (the rounded position) is in the self-check");
         });
 
         Test("the sampler's definitions ship with the launcher and every line is inside the proven cap", () =>
         {
             var defs = DeepLadder.Definitions;
-            Equal(25, defs.Count, "sampler + 895 aggregate + 897 snapshot + 899 terrain and the optional-helper report");
+            Equal(26, defs.Count, "sampler + 895 aggregate + 897 snapshot + 899 terrain, the optional-helper report, and 916's attacking/position helpers");
             True(defs.All(l => l.Length <= DeepLadder.MaxLine), "a line over 411 characters is truncated by the console, which is a fatal syntax error");
             True(defs.Any(l => l.Contains("function SAMPLE5()", StringComparison.Ordinal)), "SAMPLE5 must be defined");
             True(defs.Any(l => l.Contains("function REG5(", StringComparison.Ordinal) || l.Contains("REG5", StringComparison.Ordinal)), "REG5 must be defined");
@@ -162,7 +166,7 @@ public static class DeepLadderTests
         Test("the whole bootstrap is freeze, definitions, self-check, THEN go — in that order", () =>
         {
             var all = DeepLadder.AllLines();
-            Equal(28, all.Count, "freeze + 25 definitions + self-check + SQ()");
+            Equal(29, all.Count, "freeze + 26 definitions + self-check + SQ()");
             True(all[0].Contains(DeepLadder.FreezeMarker, StringComparison.Ordinal), "the freeze is FIRST, so the definitions cost no game time");
             True(all[^2].Contains(DeepLadder.AllOkMarker, StringComparison.Ordinal), "the self-check is second to last");
             Equal("SQ()", all[^1], "and sampling is committed to LAST, only after the check");
