@@ -1,4 +1,21 @@
-# Paladin Replay Launcher 0.5.9
+# Paladin Replay Launcher 0.5.10
+
+Opens an Age of Empires IV replay and puts your game settings back exactly as they were
+afterwards.
+
+## New in 0.5.10
+
+- **A capture now says when it could not read the map, instead of saying nothing.** Reading the map is
+  optional on purpose: if one of the lines Paladin types into the game gets lost, your build order must
+  still be good. Until now that also meant a lost line did nothing and told you nothing. Your capture
+  now says "your build order is complete, the opening map was not read this time", and records which
+  part was missing.
+- **And the thing that puts the game back to normal speed is no longer optional.** Paladin stops the
+  replay for a moment to set itself up, then starts it again. If the line that starts it again went
+  missing, the capture used to stop quietly with the game still paused. That step is now checked like
+  every other essential one, and re-sent if it goes astray.
+
+## New in 0.5.9
 
 Opens an Age of Empires IV replay and puts your game settings back exactly as they were
 afterwards.

@@ -259,6 +259,12 @@ public sealed class DumpRecord
     public double? GameTimeAtEnv { get; set; }
     public List<DumpChunkRecord> Chunks { get; set; } = new();
     public bool? DefOk { get; set; }
+    /// <summary>
+    /// 901 - the optional enrichment this capture could not set up, from the sampler's own
+    /// PALADIN5_OPT line. Empty or absent means nothing was missing. A capture with names here still
+    /// has a good build order; what it lacks is the opening map, the terrain, or both.
+    /// </summary>
+    public List<string>? OptionalMissing { get; set; }
     public bool Fatal { get; set; }
     /// <summary>Where the evidence text was written, if it was.</summary>
     public string? EvidencePath { get; set; }

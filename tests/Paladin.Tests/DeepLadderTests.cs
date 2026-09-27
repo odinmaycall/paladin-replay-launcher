@@ -562,6 +562,65 @@ public static class DeepPreflightTests
             True(ReplayUploader.WireCapBytes > 1_579_711, "2.6x the largest replay ever banked");
         });
 
+        Test("901 - THE THAW IS NOT OPTIONAL, so it is gated like everything the run cannot do without", () =>
+        {
+            // 899 left V9T in neither list, and SQ2 calls it unguarded. A dropped V9T line therefore
+            // raised inside SQ2 -- which SQ swallows with pcall -- so the interval was never
+            // registered AND the replay was never thawed, with nothing printed to say why. Gating it
+            // turns that into a self-check miss, and the session RE-SENDS the line that defines it.
+            var gated = DeepLadder.Definitions.First(l => l.Contains("function V5W3", StringComparison.Ordinal));
+            True(gated.Contains("V5Z(\"V9T\",V9T)", StringComparison.Ordinal),
+                "V9T must be in V5WHO: a capture that cannot thaw must fail loudly, not quietly");
+        });
+
+        Test("901 - the optional REPORTER cannot take the run down with it", () =>
+        {
+            var sq2 = DeepLadder.Definitions.First(l => l.Contains("function SQ2(", StringComparison.Ordinal));
+            True(sq2.Contains("pcall(V5OPT)", StringComparison.Ordinal),
+                "V5OPT is itself an optional line, so calling it must be guarded");
+            False(sq2.Contains("\"..V5OPT()", StringComparison.Ordinal),
+                "the unguarded call is what made a dropped reporter abort the whole bootstrap");
+            True(sq2.Contains("V5OPT,", StringComparison.Ordinal),
+                "and when the reporter itself is missing it must still be NAMED in the report");
+        });
+
+        Test("901 - the report names every helper whose absence would print an empty success", () =>
+        {
+            var opt = DeepLadder.Definitions.First(l => l.Contains("function V5OPT(", StringComparison.Ordinal));
+            foreach (var name in new[] { "WQ", "WP", "WSKIP", "WROW", "WSNAP", "TH", "TT", "TROW", "TSNAP", "WO", "WO1" })
+                True(opt.Contains($"V5Z(\"{name}\",{name})", StringComparison.Ordinal), $"{name} must be reported when it is missing");
+
+            // WO and WO1 decide a snapshot row's owner. Without them every WROW pcall fails and WSNAP
+            // prints PALADIN2_BEGIN and PALADIN2_DONE around zero rows: a success with no map in it.
+            var gated = DeepLadder.Definitions.First(l => l.Contains("function V5W3", StringComparison.Ordinal));
+            False(gated.Contains("\"WO\"", StringComparison.Ordinal), "reported, never gated: a missing map may not void a build order");
+        });
+
+        Test("901 - a capture NAMES the enrichment it could not set up", () =>
+        {
+            var line = "01:21:30.002   PALADIN5_OPT|TSNAP,TROW,";
+            var missing = DeepLadder.OptionalMissingFrom(line);
+            Equal(2, missing.Count, "the two names in the line");
+            True(missing.Contains("TSNAP"), "TSNAP");
+            True(missing.Contains("TROW"), "TROW");
+
+            Equal(0, DeepLadder.OptionalMissingFrom("01:21:30.002   PALADIN5_OPT|").Count,
+                "an empty payload is the good case: nothing was missing");
+            Equal(0, DeepLadder.OptionalMissingFrom("01:21:30.002   PALADIN5_VA_END|84").Count,
+                "and any other line is not this one");
+            Equal(0, DeepLadder.OptionalMissingFrom(null).Count);
+        });
+
+        Test("901 - a missing map is reported to the reader WITHOUT calling the capture a failure", () =>
+        {
+            var said = DeepConsoleText.MapNotRead(new[] { "TSNAP" });
+            True(said.Contains("build order is complete", StringComparison.OrdinalIgnoreCase),
+                "the first thing a reader must be told is that their capture is good: " + said);
+            True(said.Contains("map", StringComparison.OrdinalIgnoreCase), "and what was lost: " + said);
+            False(said.Contains("TSNAP", StringComparison.Ordinal), "a reader is not shown a Lua function name");
+            False(said.Contains("fail", StringComparison.OrdinalIgnoreCase), "and it is not a failure");
+        });
+
         Test("the reader is told what it is FOR, not what it is", () =>
         {
             var retaining = DeepConsoleText.RetainingReplay();

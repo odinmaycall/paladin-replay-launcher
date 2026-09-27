@@ -62,6 +62,28 @@ public static class DeepLadder
     /// <summary>The sampler registered its interval and the simulation is thawed.</summary>
     public const string SquadDoneMarker = "PALADIN3_SQ_DONE";
 
+    /// <summary>
+    /// 901 - the OPTIONAL helpers the run could not set up, printed by SQ2 before either snapshot.
+    ///
+    /// The three categories are gated (V5WHO: a drop voids the capture), reported (this: a drop costs
+    /// the map and says so) and unlisted (silent). 899 added the category and left the reporter itself
+    /// able to fail silently; 901 guards the call and makes a missing reporter name itself.
+    /// </summary>
+    public const string OptionalMarker = "PALADIN5_OPT";
+
+    /// <summary>The names in a PALADIN5_OPT line, or empty for any other line. "" means nothing was missing.</summary>
+    public static IReadOnlyList<string> OptionalMissingFrom(string? line)
+    {
+        if (string.IsNullOrEmpty(line)) return Array.Empty<string>();
+        var at = line.IndexOf(OptionalMarker + "|", StringComparison.Ordinal);
+        if (at < 0) return Array.Empty<string>();
+        var bar = line.IndexOf('|', at);
+        return line[(bar + 1)..]
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(n => n.Length > 0)
+            .ToList();
+    }
+
     /// <summary>The production cadence, in game seconds between samples.</summary>
     public const int Cadence = 5;
 

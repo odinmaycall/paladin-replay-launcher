@@ -52,6 +52,17 @@ public static class DeepConsoleText
     public static string Repairing(IReadOnlyList<string> missing, int attempt, int of) =>
         $"The game dropped {missing.Count} setup step{(missing.Count == 1 ? "" : "s")}; sending them again (try {attempt} of {of}).";
 
+    /// <summary>
+    /// 901 - the build order is complete and the map is not.
+    ///
+    /// The map is optional BY DESIGN: a dropped snapshot or terrain line may never void a capture.
+    /// Until now that also meant it said nothing at all, so a reader whose map silently failed had no
+    /// way to know. This is the whole point of the reported category.
+    /// </summary>
+    public static string MapNotRead(IReadOnlyList<string> missing) =>
+        $"Your build order is complete. The opening map was not read this time — the game dropped "
+        + $"{missing.Count} optional setup step{(missing.Count == 1 ? "" : "s")}.";
+
     public static string Running(int cadence, int rate) =>
         $"Capturing every {cadence} seconds of game time, at {rate / 8}× speed.";
 

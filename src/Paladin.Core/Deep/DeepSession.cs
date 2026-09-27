@@ -268,6 +268,16 @@ public sealed class DeepSession
                     DeepLadder.Go, DeepLadder.SquadDoneMarker, TimeSpan.FromSeconds(_options.Pacing.DefWaitSeconds), _log.Refresh(), ConsoleDriver.TriesPerLine, ct);
                 if (!go.Landed) return DeepFailures.BootstrapLost($"the sampler was complete and SQ() did not answer: {go.Detail ?? go.Outcome.ToString()}");
                 record.Timings.LastDone = _now();
+                // 901 - what the sampler could not set up. Optional by design, so this never fails the
+                // capture; it is recorded and said out loud instead of passing as a silent success.
+                var optional = DeepLadder.OptionalMissingFrom(
+                    _log.Lines.LastOrDefault(l => DumpLogText.HasMarker(l, DeepLadder.OptionalMarker)));
+                if (optional.Count > 0)
+                {
+                    record.OptionalMissing = optional.ToList();
+                    _ui.Warn(DeepConsoleText.MapNotRead(optional));
+                    _diag?.Warn($"The capture could not set up {string.Join(", ", optional)}; the build order is unaffected.");
+                }
                 _store.SaveRecord(record);
                 _ui.Ok(DeepConsoleText.Running(DeepLadder.Cadence, DeepLadder.SimRate));
                 return null;
