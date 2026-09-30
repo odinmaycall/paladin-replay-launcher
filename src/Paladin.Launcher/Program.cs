@@ -470,7 +470,8 @@ internal static class Program
             Squads: options.Squads,
             Force: options.Force || linkForce,
             AssumeYes: options.AssumeYes,
-            ThenWatch: thenWatch || options.ThenWatch);
+            ThenWatch: thenWatch || options.ThenWatch,
+            NoBrowser: options.NoBrowser);
     }
 
     /// <summary>playback\AgeIV_Replay_&lt;id&gt;, the file the owner's queue already downloaded.</summary>

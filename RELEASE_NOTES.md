@@ -1,7 +1,20 @@
-# Paladin Replay Launcher 0.5.10
+# Paladin Replay Launcher 0.5.11
 
 Opens an Age of Empires IV replay and puts your game settings back exactly as they were
 afterwards.
+
+## New in 0.5.11
+
+- **A capture can now be told not to open your browser.** When a capture finishes, Paladin opens that
+  game's build order for you. That is what you want for a capture you started yourself, and exactly what
+  you do not want when a queue is capturing hundreds of games overnight — you would come back to hundreds
+  of tabs, and a window appearing can take the keyboard away from the next capture and spoil it. Add
+  `--no-browser` and the capture runs exactly as before but prints the build order's address instead of
+  opening it. Your capture, the replay Paladin keeps for you and your game settings being put back are all
+  untouched.
+- One thing worth knowing if you use it: opening that page is also how a finished capture tells Paladin
+  which launcher you are running, so a capture with `--no-browser` does not. Installing the launcher tells
+  it, and so does opening Paladin yourself — nothing is lost, it just is not told by that capture.
 
 ## New in 0.5.10
 

@@ -1104,6 +1104,52 @@ public static class DumpRunTests
             False(notes.Contains($"## New in {version} (draft)", StringComparison.Ordinal),
                 "and it is no longer marked a draft");
         });
+
+        // 926 — THE FOUR LINES THAT CARRY --no-browser, ASSERTED ON THE SOURCE ITSELF.
+        //
+        // This project references only Paladin.Core: it targets net10.0 while the Launcher targets
+        // net10.0-windows with a win-x64 RuntimeIdentifier, so a ProjectReference to it fails NU1201. The
+        // parse, the threading and the call site are therefore unreachable from an ordinary test — and an
+        // adversarial review of this change found FOUR one-token mutations that each send every queued
+        // capture back to opening a browser tab while all of these tests still pass: misspell the switch
+        // label so the flag falls into the parser's default case, drop the named argument in Program, swap
+        // the two switch arms, or drop the negation that flips the flag for the pre-flight line.
+        //
+        // So they are asserted as text, which is exactly what "The shipped version" above already does.
+        Suite("Deep result page wiring");
+
+        Test("926 — --no-browser IS PARSED, THREADED AND HONOURED, and the arms are not swapped", () =>
+        {
+            var root = RepoRoot();
+            // A published single-file test exe has no repository under it; this is a repo-hygiene check.
+            if (root is null) return;
+            var launcher = Path.Combine(root, "src", "Paladin.Launcher");
+
+            var options = File.ReadAllText(Path.Combine(launcher, "CommandLineOptions.cs"));
+            True(options.Contains("case \"--no-browser\":", StringComparison.Ordinal),
+                "the parser has a case for it, rather than discarding it as an unknown dash-argument");
+            True(options.Contains("--no-browser          Do not open the build-order page", StringComparison.Ordinal),
+                "and --help lists it, which is the only way to tell whether an INSTALLED build has the flag");
+
+            var program = File.ReadAllText(Path.Combine(launcher, "Program.cs"));
+            True(program.Contains("NoBrowser: options.NoBrowser", StringComparison.Ordinal),
+                "the parsed flag is threaded into the request the runner is given");
+
+            var deep = File.ReadAllText(Path.Combine(launcher, "DeepRunner.cs"));
+            True(deep.Contains("DeepResultPage.ActionFor(Result is { Ok: true }, DryRun, request.NoBrowser)", StringComparison.Ordinal),
+                "the runner asks the predicate, with the arguments in the order it declares them");
+            True(deep.Contains("WhatWillHappen(request.Upload, host, !request.NoBrowser)", StringComparison.Ordinal),
+                "and the pre-flight line is negated exactly once, so it promises a page when one will open");
+
+            // Containment alone would not catch the arms being swapped, so the ORDER is pinned: the Open
+            // label, then the call that opens, then the PrintOnly label, then the note that only points.
+            var openArm = deep.IndexOf("case DeepResultPageAction.Open:", StringComparison.Ordinal);
+            var opensIt = deep.IndexOf("OpenResultPage(request.GameId);", StringComparison.Ordinal);
+            var printArm = deep.IndexOf("case DeepResultPageAction.PrintOnly:", StringComparison.Ordinal);
+            var printsIt = deep.IndexOf("_ui.Note(DeepResultPage.NotOpening(", StringComparison.Ordinal);
+            True(openArm >= 0 && opensIt > openArm && printArm > opensIt && printsIt > printArm,
+                $"Open opens and PrintOnly only prints (open={openArm} opens={opensIt} print={printArm} prints={printsIt})");
+        });
     }
 
     /// <summary>

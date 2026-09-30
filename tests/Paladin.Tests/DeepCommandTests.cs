@@ -1,5 +1,7 @@
 using Paladin.Core.Deep;
+using Paladin.Core.Dump;
 using Paladin.Core.Protocol;
+using Paladin.Core.Replay;
 using static Paladin.Tests.TestHarness;
 
 namespace Paladin.Tests;
@@ -195,6 +197,125 @@ public static class DeepCommandTests
         {
             True(LauncherCallback.Capabilities.Contains("deepCapture"), "this build can capture");
             True(LauncherCallback.UrlFor("https://x.test", "0.5.0")!.Contains("caps=deepCapture"), "and says so by name");
+        });
+
+        // 926 - THE BUILD-ORDER PAGE, AND THE QUEUE THAT CANNOT HAVE IT.
+        //
+        // 869 opens the page on every successful capture, which is right for the one capture a reader
+        // starts by hand and wrong for the owner's Deep queue: 561 games unattended is 561 browser tabs by
+        // morning, and a window taking the foreground is this launcher's own failure code 16 (F7 FocusLost),
+        // so the page opened for one game can cost the next one.
+        //
+        // THE DECISION IS IN Paladin.Core ON PURPOSE. This project references only Paladin.Core - it cannot
+        // see CommandLineOptions or DeepRunner at all, and cannot without retargeting off net10.0 - so a
+        // flag whose behaviour lived entirely in the Launcher would be a flag with no test behind it.
+        Suite("Deep result page");
+
+        Test("A CAPTURE THAT LANDED OPENS THE PAGE, which is every interactive run and must not change", () =>
+        {
+            Equal(DeepResultPageAction.Open, DeepResultPage.ActionFor(captureOk: true, dryRun: false, noBrowser: false));
+        });
+
+        Test("--no-browser WITHHOLDS THE PAGE AND SAYS WHERE IT IS, rather than going quiet", () =>
+        {
+            // The third outcome is the point: a suppressed page that printed nothing would be
+            // indistinguishable from a page that failed to open.
+            Equal(DeepResultPageAction.PrintOnly, DeepResultPage.ActionFor(captureOk: true, dryRun: false, noBrowser: true));
+        });
+
+        Test("a dry run opens nothing, with the flag or without it", () =>
+        {
+            Equal(DeepResultPageAction.None, DeepResultPage.ActionFor(captureOk: true, dryRun: true, noBrowser: false));
+            Equal(DeepResultPageAction.None, DeepResultPage.ActionFor(captureOk: true, dryRun: true, noBrowser: true));
+        });
+
+        Test("a capture that did not land opens nothing either, because there is no build order to show", () =>
+        {
+            Equal(DeepResultPageAction.None, DeepResultPage.ActionFor(captureOk: false, dryRun: false, noBrowser: false));
+            Equal(DeepResultPageAction.None, DeepResultPage.ActionFor(captureOk: false, dryRun: false, noBrowser: true));
+            Equal(DeepResultPageAction.None, DeepResultPage.ActionFor(captureOk: false, dryRun: true, noBrowser: false));
+            Equal(DeepResultPageAction.None, DeepResultPage.ActionFor(captureOk: false, dryRun: true, noBrowser: true));
+        });
+
+        Test("THE WHOLE TRUTH TABLE, so there is no fourth unstated case", () =>
+        {
+            // Eight rows, enumerated rather than reasoned about: the flag is the ONLY thing that moves the
+            // one row that used to open a browser, and it moves it to PrintOnly, never to None.
+            var expected = new[]
+            {
+                (ok: false, dry: false, no: false, want: DeepResultPageAction.None),
+                (ok: false, dry: false, no: true,  want: DeepResultPageAction.None),
+                (ok: false, dry: true,  no: false, want: DeepResultPageAction.None),
+                (ok: false, dry: true,  no: true,  want: DeepResultPageAction.None),
+                (ok: true,  dry: true,  no: false, want: DeepResultPageAction.None),
+                (ok: true,  dry: true,  no: true,  want: DeepResultPageAction.None),
+                (ok: true,  dry: false, no: false, want: DeepResultPageAction.Open),
+                (ok: true,  dry: false, no: true,  want: DeepResultPageAction.PrintOnly),
+            };
+            foreach (var row in expected)
+            {
+                Equal(row.want, DeepResultPage.ActionFor(row.ok, row.dry, row.no),
+                    $"captureOk={row.ok} dryRun={row.dry} noBrowser={row.no}");
+            }
+
+            // And exactly one row differs between flag off and flag on, which is what "suppress only the
+            // page" means when stated as a measurement.
+            var moved = 0;
+            foreach (var ok in new[] { false, true })
+            foreach (var dry in new[] { false, true })
+            {
+                if (DeepResultPage.ActionFor(ok, dry, false) != DeepResultPage.ActionFor(ok, dry, true)) moved++;
+            }
+            Equal(1, moved, "the flag changes exactly one of the four (captureOk, dryRun) cases");
+        });
+
+        Test("the withheld note names the flag and carries the address, so nothing is lost silently", () =>
+        {
+            var note = DeepResultPage.NotOpening("https://paladin.odinmaycall.com/build-order?game=252449203");
+            True(note.Contains("--no-browser"), $"it says which flag withheld it: {note}");
+            True(note.Contains("build-order?game=252449203"), $"and where the build order is: {note}");
+        });
+
+        Test("926 - A REQUEST DEFAULTS TO OPENING THE PAGE, so no existing caller changes behaviour", () =>
+        {
+            // NoBrowser was appended LAST to DumpRequest. This is the regression test for that append: a
+            // request built the way Program.cs builds one must come out identical apart from the new field.
+            var replay = new ReplayRequest { Kind = "local", Value = @"C:\playback\AgeIV_Replay_252449203" };
+            var interactive = new DumpRequest(252449203L, replay);
+            False(interactive.NoBrowser, "an unflagged request opens the page exactly as it always did");
+            Equal(DeepResultPageAction.Open, DeepResultPage.ActionFor(true, false, interactive.NoBrowser));
+
+            var queued = new DumpRequest(
+                252449203L, replay,
+                Upload: true, Squads: false, Force: true, AssumeYes: true, ThenWatch: false, NoBrowser: true);
+            True(queued.NoBrowser, "the queue asked for no browser");
+            True(queued.Upload, "and the capture still uploads");
+            True(queued.Force, "still forces a refresh row");
+            True(queued.AssumeYes, "still runs unattended");
+            False(queued.Squads, "still types no squad ladder");
+            False(queued.ThenWatch, "and still does not reopen the replay to watch");
+            Equal("AgeIV_Replay_252449203", queued.ExpectedReplayName, "the replay it must be given is unchanged");
+        });
+
+        Test("AND THE CONSOLE STOPS PROMISING A PAGE IT WILL NOT OPEN", () =>
+        {
+            // The line said the build order "opens on Paladin" whatever happened. Under --no-browser that
+            // was untrue, and a console that mis-describes what it is about to do is how an unattended run
+            // gets misread at 3am.
+            var host = "paladin.odinmaycall.com";
+            var opens = string.Join(" ", DeepConsoleText.WhatWillHappen(upload: true, host, opensPage: true));
+            True(opens.Contains("build order opens on Paladin"), $"the interactive run still says so: {opens}");
+
+            var withheld = string.Join(" ", DeepConsoleText.WhatWillHappen(upload: true, host, opensPage: false));
+            True(withheld.Contains(host), $"the capture is still sent: {withheld}");
+            True(withheld.Contains("--no-browser"), $"and it names the flag: {withheld}");
+            False(withheld.Contains("opens on Paladin"), $"but promises no page: {withheld}");
+
+            // --no-upload is untouched by any of this: nothing is sent, so there was never a page to promise.
+            var local = string.Join(" ", DeepConsoleText.WhatWillHappen(upload: false, host, opensPage: false));
+            True(local.Contains("stays on this PC"), $"{local}");
+            Equal(string.Join(" ", DeepConsoleText.WhatWillHappen(upload: false, host, opensPage: true)), local,
+                "and the flag changes nothing at all on the local path");
         });
 
     }

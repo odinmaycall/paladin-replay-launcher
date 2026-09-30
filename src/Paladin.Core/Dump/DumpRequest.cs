@@ -20,6 +20,18 @@ namespace Paladin.Core.Dump;
 /// than a continuation of the first, because the dump's game is ended as soon as the
 /// evidence is safe (D1 amended) and a replay has nothing to save.
 /// </param>
+/// <param name="NoBrowser">
+/// 926 — --no-browser: do not open the build-order page when the capture lands. For the owner's
+/// unattended queue, where one tab a game is 561 tabs by morning and a window taking the foreground
+/// is failure code 16.
+///
+/// The capture, the upload, the replay retention, the Shield's restore and the exit code are all
+/// untouched. It is NOT quite true that it suppresses the page and nothing else, and saying so would be
+/// the kind of half-claim that costs an afternoon later: §869 made this launcher's version and capability
+/// announcement ride on the SAME shell-open, and the printed replacement URL deliberately omits it, so a
+/// run with this flag tells the site nothing about itself. §892's paladin://hello is how that is sent
+/// without capturing a game, and --install announces too.
+/// </param>
 public sealed record DumpRequest(
     long GameId,
     ReplayRequest Replay,
@@ -27,7 +39,8 @@ public sealed record DumpRequest(
     bool Squads = false,
     bool Force = false,
     bool AssumeYes = false,
-    bool ThenWatch = false)
+    bool ThenWatch = false,
+    bool NoBrowser = false)
 {
     /// <summary>The name the replay must be placed under for the game to accept it, and for RUN-OPTIONS to name this game.</summary>
     public string ExpectedReplayName => $"AgeIV_Replay_{GameId}";

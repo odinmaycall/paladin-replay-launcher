@@ -126,7 +126,7 @@ public sealed class DeepRunner
         }
 
         var host = uploader?.Host ?? DumpConsoleText.DefaultHost;
-        foreach (var line in DeepConsoleText.WhatWillHappen(request.Upload, host)) _ui.Note(line);
+        foreach (var line in DeepConsoleText.WhatWillHappen(request.Upload, host, !request.NoBrowser)) _ui.Note(line);
 
         if (DumpCountdown.ShouldWait(request.AssumeYes, Console.IsInputRedirected) && !await CountdownAsync(ct))
             return ExitCodes.Cancelled;
@@ -224,7 +224,18 @@ public sealed class DeepRunner
             else _ui.Warn(DeepConsoleText.ReplayNotRetained(kept.Error));
         }
 
-        if (Result is { Ok: true } && !DryRun) OpenResultPage(request.GameId);
+        // 926 — and --no-browser withholds that page for an unattended queue, printing where it is
+        // instead. The decision is DeepResultPage.ActionFor so both paths are covered by tests; nothing
+        // above this line, and nothing below it, is inside the branch.
+        switch (DeepResultPage.ActionFor(Result is { Ok: true }, DryRun, request.NoBrowser))
+        {
+            case DeepResultPageAction.Open:
+                OpenResultPage(request.GameId);
+                break;
+            case DeepResultPageAction.PrintOnly:
+                _ui.Note(DeepResultPage.NotOpening(ResultPageUrl(request.GameId)));
+                break;
+        }
 
         if (Result?.Failure is { } failed) return failed.ExitCode;
 
@@ -242,6 +253,10 @@ public sealed class DeepRunner
         return exit;
     }
 
+    /// <summary>926 — the page a reader is sent to, without the announcement riding along: the one string both the opened and the printed path use, so they cannot drift.</summary>
+    private string ResultPageUrl(long gameId) =>
+        $"{LauncherCallback.OriginOf(_config.DumpUploadBaseUrl)}build-order?game={gameId}";
+
     /// <summary>
     /// §869 — the game's build-order page, with this launcher's announcement riding along.
     ///
@@ -250,20 +265,20 @@ public sealed class DeepRunner
     /// </summary>
     private void OpenResultPage(long gameId)
     {
-        var origin = LauncherCallback.OriginOf(_config.DumpUploadBaseUrl);
+        var readable = ResultPageUrl(gameId);
         var announce = LauncherCallback.UrlFor(_config.DumpUploadBaseUrl, _version);
         var query = announce is null ? "" : announce[(announce.IndexOf('?') + 1)..];
-        var url = $"{origin}build-order?game={gameId}" + (query.Length == 0 ? "" : $"&{query}");
+        var url = readable + (query.Length == 0 ? "" : $"&{query}");
         try
         {
             using var process = Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
-            _ui.Note($"Opening the build order: {origin}build-order?game={gameId}");
+            _ui.Note($"Opening the build order: {readable}");
             _log.Info($"Opened {url}");
         }
         catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or System.IO.FileNotFoundException)
         {
             _log.Warn($"Could not open the build-order page: {ex.Message}");
-            _ui.Note($"See the build order at {origin}build-order?game={gameId}");
+            _ui.Note($"See the build order at {readable}");
         }
     }
 

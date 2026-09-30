@@ -35,6 +35,8 @@ public sealed class CommandLineOptions
     public string? DumpGameInput { get; private set; }
     /// <summary>--no-upload: keep the rows local (the owner's own queue).</summary>
     public bool NoUpload { get; private set; }
+    /// <summary>926 — --no-browser: do not open the build-order page after a capture (an unattended queue).</summary>
+    public bool NoBrowser { get; private set; }
     /// <summary>--squads: also type the squad ladder.</summary>
     public bool Squads { get; private set; }
     /// <summary>--force: dump even though Paladin already has a world layer for the game.</summary>
@@ -108,6 +110,11 @@ public sealed class CommandLineOptions
 
                 case "--no-upload":
                     options.NoUpload = true;
+                    break;
+
+                case "--no-browser":
+                    // 926 — the capture still happens and still uploads; only the page stays shut.
+                    options.NoBrowser = true;
                     break;
 
                 case "--squads":
@@ -297,6 +304,9 @@ public sealed class CommandLineOptions
                                           click or type while it runs. Without --replay the
                                           replay already in playback/ is used.
                     --no-upload           Dump, but keep the rows on this PC.
+                    --no-browser          Do not open the build-order page when a capture lands.
+                                          For unattended queues: one tab per game otherwise, and
+                                          a window stealing focus can fail the next capture.
                     --squads              Also print the squads (the owner's own queue).
                     --force               Dump even if Paladin already has this game's map.
                     --watch               Watch the replay after a successful dump.

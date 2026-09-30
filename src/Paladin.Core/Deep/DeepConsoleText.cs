@@ -19,12 +19,19 @@ public static class DeepConsoleText
         map is null ? $"game {gameId}" : $"game {gameId} · {map}";
 
     /// <summary>What is about to happen, before the countdown. No jargon, one promise per line.</summary>
-    public static IReadOnlyList<string> WhatWillHappen(bool upload, string host) => new[]
+    /// <summary>
+    /// 926 — `opensPage` is false under --no-browser, and the promise is withdrawn rather than left standing.
+    /// The line said the build order "opens on Paladin" unconditionally, which under the flag was simply untrue,
+    /// and a console that mis-describes what it is about to do is how an unattended run gets misread.
+    /// </summary>
+    public static IReadOnlyList<string> WhatWillHappen(bool upload, string host, bool opensPage = true) => new[]
     {
         "Deep Capture plays this replay through Age of Empires IV and reads what every villager is doing.",
         "It takes a few minutes and needs the machine to itself: the game must keep the keyboard.",
         upload
-            ? $"When it finishes, the result is sent to {host} and the game's build order opens on Paladin."
+            ? opensPage
+                ? $"When it finishes, the result is sent to {host} and the game's build order opens on Paladin."
+                : $"When it finishes, the result is sent to {host}. --no-browser: no page will be opened."
             : "The result stays on this PC; nothing is sent.",
     };
 
@@ -144,4 +151,43 @@ public static class DeepFailures
         "D3",
         $"The replay stopped at {reached / 60}:{reached % 60:00} of the {window / 60}:{window % 60:00} Deep Capture needs. Nothing was sent.",
         DumpExitCodes.Incomplete, $"reached {reached}s of {window}s; the rows are at {folder}");
+}
+
+/// <summary>
+/// 926 — WHETHER A LANDED CAPTURE OPENS THE BUILD-ORDER PAGE.
+///
+/// §869 opened it on every successful capture, which is right for the one capture a reader starts by
+/// hand and wrong for a queue: the owner's Deep queue runs 561 games unattended, and 561 browser tabs
+/// is not a side effect, it is a machine that has to be rescued in the morning. Worse, a window taking
+/// the foreground is failure code 16 (F7 FocusLost), so the page opened for one game can cost the next
+/// one.
+///
+/// THE THIRD OUTCOME IS THE POINT. --no-browser does not mean silence: the capture landed and the
+/// reader still needs to know where it went, so the URL is PRINTED instead of opened. A suppressed
+/// page that said nothing would be indistinguishable from a page that failed to open.
+///
+/// A PURE DECISION HERE, like DumpCountdown.ShouldWait, because the Launcher project is not reachable
+/// from the tests and a flag whose behaviour cannot be tested is a flag nobody can trust.
+/// </summary>
+public static class DeepResultPage
+{
+    /// <summary>Total on the three facts that decide it, so there is no fourth unstated case.</summary>
+    public static DeepResultPageAction ActionFor(bool captureOk, bool dryRun, bool noBrowser) =>
+        !captureOk || dryRun ? DeepResultPageAction.None
+        : noBrowser ? DeepResultPageAction.PrintOnly
+        : DeepResultPageAction.Open;
+
+    /// <summary>What the console says instead of opening a window. It names the flag, so the reader knows the page was withheld deliberately rather than broken.</summary>
+    public static string NotOpening(string url) => $"--no-browser: the build order is at {url}";
+}
+
+/// <summary>926 — the three things that can happen to the build-order page when a run ends.</summary>
+public enum DeepResultPageAction
+{
+    /// <summary>Nothing landed, or nothing ran: there is no build order to point at.</summary>
+    None,
+    /// <summary>The reader's own capture: take them to it, and carry the announcement along.</summary>
+    Open,
+    /// <summary>--no-browser: say where it is and open nothing.</summary>
+    PrintOnly,
 }
