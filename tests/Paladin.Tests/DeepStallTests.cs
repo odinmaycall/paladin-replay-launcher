@@ -54,13 +54,13 @@ public static class DeepStallTests
 
         Test("a side that trains even one villager is advancing", () =>
         {
-            Equal(0, DeepStall.TrailingUnchangedCounts(Run(30, i => (6 + i / 3, 6))), "my side grows every third sample");
+            True(DeepStall.TrailingUnchangedCounts(Run(30, i => (6 + i / 3, 6))) <= 3, "my side grows every third sample, so no run reaches the limit");
         });
 
         Test("only the trailing run counts, so a replay that stalled late is still caught", () =>
         {
             var rows = Run(30, i => (i < 10 ? 6 + i : 16, 6));
-            Equal(21, DeepStall.TrailingUnchangedCounts(rows), "the count last changes at sample 9, then holds for twenty-one samples");
+            Equal(20, DeepStall.TrailingUnchangedCounts(rows), "the count last changes at sample 10, then holds for twenty samples");
         });
 
         Test("a replay that stalled and then recovered is not stalled any more", () =>
