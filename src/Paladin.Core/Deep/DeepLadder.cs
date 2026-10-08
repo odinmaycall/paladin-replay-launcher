@@ -47,6 +47,9 @@ public static class DeepLadder
     /// <summary>Simulation running again. `PALADIN9_THAW|&lt;ok&gt;|&lt;rate&gt;|&lt;gameTime&gt;`.</summary>
     public const string ThawMarker = "PALADIN9_THAW";
 
+    /// <summary>The sim rate and the clock, read on demand. `PALADIN9_PROBE|&lt;rate&gt;|&lt;gameTime&gt;`.</summary>
+    public const string ProbeMarker = "PALADIN9_PROBE";
+
     /// <summary>Every helper landed: the bootstrap is complete and may be committed.</summary>
     public const string AllOkMarker = "PALADIN3_SQDEF";
 
@@ -131,6 +134,15 @@ public static class DeepLadder
     public static string Thaw =>
         "local z=pcall(Misc_SetSimRate," + SimRate + ") print(\"" + ThawMarker + "|\"..tostring(z).."
         + "\"|\"..tostring(select(2,pcall(Misc_GetSimRate))).."
+        + "\"|\"..tostring(select(2,pcall(World_GetGameTime))))";
+
+    /// <summary>
+    /// 930 - ASK THE GAME WHAT RATE IT IS RUNNING AT, without changing anything. Sent when the world has
+    /// stopped changing, so the session log records whether the rate was 0 (a thaw that did not take) or
+    /// 64 (a sim that is running but not updating), which the stalled captures could not say.
+    /// </summary>
+    public static string Probe =>
+        "print(\"" + ProbeMarker + "|\"..tostring(select(2,pcall(Misc_GetSimRate))).."
         + "\"|\"..tostring(select(2,pcall(World_GetGameTime))))";
 
     /// <summary>

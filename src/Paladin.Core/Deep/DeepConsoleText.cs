@@ -144,6 +144,16 @@ public static class DeepFailures
         DumpExitCodes.Incomplete, detail);
 
     /// <summary>
+    /// 930 - the sample clock advanced and the world did not. Every villager row was identical, sample
+    /// after sample, so the replay was not playing. Caught in about a minute of game time instead of
+    /// fifteen minutes later at the Worker's door.
+    /// </summary>
+    public static DumpFailure Stalled(int samples, int atClock, string detail) => new(
+        "D4",
+        $"The replay stopped moving at {atClock / 60}:{atClock % 60:00}. Nothing was sent.",
+        DumpExitCodes.Incomplete, $"{samples} identical samples; {detail}");
+
+    /// <summary>
     /// Short. Refused rather than sent, because an incomplete capture is not a better build order than
     /// no capture — it is a worse one with a gap, and the Worker refuses it at the door in any case.
     /// </summary>

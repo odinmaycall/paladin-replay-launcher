@@ -70,6 +70,22 @@ public sealed class DeepSession
     public const int StallSeconds = 300;
 
     /// <summary>
+    /// 930 - HOW MANY CONSECUTIVE SAMPLES MAY BE BYTE-IDENTICAL BEFORE THE WORLD IS CALLED STOPPED.
+    /// Measured on the 30 Sept night: four captures ran 915-965s of samples with the clock advancing and
+    /// every villager row unchanged, then were refused at the Worker. Twelve samples is a minute of game
+    /// time (about eight seconds of wall clock at 8x), far longer than any real game leaves every villager
+    /// of both sides motionless with unchanged carry.
+    /// </summary>
+    public const int StaticSamples = 12;
+
+    /// <summary>After the one rethaw, how many more identical samples are allowed before giving up.</summary>
+    public const int StaticSamplesAfterRethaw = 6;
+
+    private int _staticRun;
+    private int _staticAtClock;
+    private string _staticDetail = "";
+
+    /// <summary>
     /// §870 — is the game still up? Null means "cannot tell", and the watch then behaves exactly as it
     /// did: it waits out the stall timeout. capture.ps1 has always checked this; the launcher did not,
     /// so a replay that ended early sat for five idle minutes before the loop gave up on it.
@@ -159,6 +175,17 @@ public sealed class DeepSession
         var reached = await WatchAsync(ct);
         var rows = DumpEvidence.DeepLines(_log.TextSoFar);
         var clocks = DeepClocks.From(rows);
+
+        if (_staticRun > 0)
+        {
+            if (rows.Count > 0)
+            {
+                record.EvidencePath = _store.SaveEvidence(string.Join(Environment.NewLine, rows));
+                record.Bytes = rows.Sum(r => r.Length);
+                _store.SaveRecord(record);
+            }
+            return Failed(record, DeepFailures.Stalled(_staticRun, _staticAtClock, _staticDetail));
+        }
 
         if (rows.Count > 0)
         {
@@ -369,6 +396,7 @@ public sealed class DeepSession
         var lastProgress = _now();
         var started = _now();
         var deadline = _now().AddSeconds(FirstSampleWaitSeconds);
+        var rethawed = false;
 
         while (!ct.IsCancellationRequested)
         {
@@ -386,6 +414,24 @@ public sealed class DeepSession
 
             if (best >= _options.WindowSeconds) return true;
 
+            // 930 - the clock moved but did the WORLD? Identical villager rows for a minute of game time
+            // mean the replay is not playing; one rethaw (with a probe, so the log says why), then give up.
+            var staticRun = DeepStall.TrailingStaticSamples(DumpEvidence.DeepLines(_log.TextSoFar));
+            var limit = StaticSamples + (rethawed ? StaticSamplesAfterRethaw : 0);
+            if (staticRun >= limit)
+            {
+                if (!rethawed)
+                {
+                    rethawed = true;
+                    _staticDetail = await RethawAsync(staticRun, best, ct);
+                    continue;
+                }
+                _staticRun = staticRun;
+                _staticAtClock = best;
+                _diag?.Warn($"The world stopped changing at {best}s ({staticRun} identical samples) and a rethaw did not restart it; stopping the watch.");
+                return false;
+            }
+
             // §870 — the game going away is an ANSWER, not something to wait out. Nothing more can be
             // sampled from a replay that has closed, so the five-minute stall timeout only delays a
             // verdict the loop could give at once.
@@ -398,6 +444,30 @@ public sealed class DeepSession
             if (best >= 0 && (_now() - lastProgress).TotalSeconds > StallSeconds) return false;
         }
         return false;
+    }
+
+    /// <summary>
+    /// 930 - the world has stopped changing: ask the game its rate and clock, then thaw again. Both
+    /// answers go to the session log, which is where the root cause of the 30 Sept stalls will be read.
+    /// Returns the probe's words for the failure detail.
+    /// </summary>
+    private async Task<string> RethawAsync(int staticRun, int atClock, CancellationToken ct)
+    {
+        var detail = "no probe answer";
+        try
+        {
+            _diag?.Warn($"{staticRun} samples in a row are identical at {atClock}s; probing the sim rate and thawing again.");
+            var probe = await _driver.SendAsync(DeepLadder.Probe, DeepLadder.ProbeMarker, TimeSpan.FromSeconds(4), _log.Refresh(), tries: 1, ct);
+            if (probe.Line is { } p) { detail = p; _diag?.Info($"Probe: {p}"); }
+            var thaw = await _driver.SendAsync(DeepLadder.Thaw, DeepLadder.ThawMarker, TimeSpan.FromSeconds(4), _log.Refresh(), tries: 1, ct);
+            if (thaw.Line is { } t) { detail += " / " + t; _diag?.Info($"Rethaw: {t}"); }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            detail = $"probe failed: {ex.Message}";
+            _diag?.Warn(detail);
+        }
+        return detail;
     }
 
     private bool GameHasGoneAway(DateTime started) =>
@@ -472,5 +542,34 @@ public sealed record DeepClocks(int Count, int First, int Last)
             if (int.TryParse(text, out var t)) clocks.Add(t);
         }
         return clocks.Count == 0 ? new DeepClocks(0, -1, -1) : new DeepClocks(clocks.Count, clocks.Min(), clocks.Max());
+    }
+}
+
+
+/// <summary>
+/// 930 - IS THE WORLD STILL CHANGING? Compares each sample's villager rows with the one before, ignoring
+/// the sample clock (the first field), which advances even when nothing else does.
+/// </summary>
+public static class DeepStall
+{
+    /// <summary>How many of the newest samples, counting back, carry exactly the same villager rows. 0 when fewer than two samples have rows.</summary>
+    public static int TrailingStaticSamples(IEnumerable<string> rows)
+    {
+        var bySample = new List<(int Clock, System.Text.StringBuilder Body)>();
+        foreach (var row in rows)
+        {
+            var at = row.IndexOf(DeepLadder.SampleMarker + "|", StringComparison.Ordinal);
+            if (at < 0) continue;
+            var start = at + DeepLadder.SampleMarker.Length + 1;
+            var bar = row.IndexOf('|', start);
+            if (bar < 0 || !int.TryParse(row[start..bar], out var clock)) continue;
+            if (bySample.Count == 0 || bySample[^1].Clock != clock) bySample.Add((clock, new System.Text.StringBuilder()));
+            bySample[^1].Body.Append(row[(bar + 1)..]).Append('\n');
+        }
+        if (bySample.Count < 2) return 0;
+        var last = bySample[^1].Body.ToString();
+        var run = 1;
+        for (var i = bySample.Count - 2; i >= 0 && bySample[i].Body.ToString() == last; i--) run++;
+        return run >= 2 ? run : 0;
     }
 }

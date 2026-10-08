@@ -1,7 +1,16 @@
-# Paladin Replay Launcher 0.5.11
+# Paladin Replay Launcher 0.5.12
 
 Opens an Age of Empires IV replay and puts your game settings back exactly as they were
 afterwards.
+
+## New in 0.5.12
+
+- **A capture whose replay has stopped now ends in about a minute, not fifteen.** Some captures kept
+  reading a replay whose clock ran on while nothing in the game moved, and were only refused after the
+  full capture. The launcher now notices when a minute of game time passes with every villager unchanged,
+  asks the game what speed it is running at, tries to restart it once, and if that does not help stops
+  with a clear message (D4) and sends nothing. The speed it reports is written to the session log, so a
+  cause can be read from it afterwards.
 
 ## New in 0.5.11
 

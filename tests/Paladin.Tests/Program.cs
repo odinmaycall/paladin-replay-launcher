@@ -17,5 +17,6 @@ DeepSelfCheckTests.Register();
 DeepEnvelopeTests.Register();
 DeepPreflightTests.Register();
 DeepCommandTests.Register();
+DeepStallTests.Register();
 
 return TestHarness.Run();
