@@ -70,16 +70,14 @@ public sealed class DeepSession
     public const int StallSeconds = 300;
 
     /// <summary>
-    /// 930 - HOW MANY CONSECUTIVE SAMPLES MAY BE BYTE-IDENTICAL BEFORE THE WORLD IS CALLED STOPPED.
-    /// Measured on the 30 Sept night: four captures ran 915-965s of samples with the clock advancing and
-    /// every villager row unchanged, then were refused at the Worker. Twelve samples is a minute of game
-    /// time (about eight seconds of wall clock at 8x), far longer than any real game leaves every villager
-    /// of both sides motionless with unchanged carry.
+    /// 930 - HOW MANY CONSECUTIVE SAMPLES MAY SHOW THE SAME VILLAGER COUNT ON EVERY SIDE BEFORE THE
+    /// REPLAY IS CALLED STALLED. This is the Worker's own rule (90s at a 5s cadence is 18 samples), applied
+    /// here at 16 so the launcher decides first. Measured on 8 Oct 2026: the sim rate was 64 and the clock
+    /// ran at 8x, yet the world did not progress: villagers kept gathering and nobody trained another one,
+    /// so the replay's commands were not being played. A rethaw was tried and changed nothing, so there
+    /// is none; the capture is ended, because that replay will fail the same way every time.
     /// </summary>
-    public const int StaticSamples = 12;
-
-    /// <summary>After the one rethaw, how many more identical samples are allowed before giving up.</summary>
-    public const int StaticSamplesAfterRethaw = 6;
+    public const int StaticSamples = 16;
 
     private int _staticRun;
     private int _staticAtClock;
@@ -396,7 +394,6 @@ public sealed class DeepSession
         var lastProgress = _now();
         var started = _now();
         var deadline = _now().AddSeconds(FirstSampleWaitSeconds);
-        var rethawed = false;
 
         while (!ct.IsCancellationRequested)
         {
@@ -414,21 +411,15 @@ public sealed class DeepSession
 
             if (best >= _options.WindowSeconds) return true;
 
-            // 930 - the clock moved but did the WORLD? Identical villager rows for a minute of game time
-            // mean the replay is not playing; one rethaw (with a probe, so the log says why), then give up.
-            var staticRun = DeepStall.TrailingStaticSamples(DumpEvidence.DeepLines(_log.TextSoFar));
-            var limit = StaticSamples + (rethawed ? StaticSamplesAfterRethaw : 0);
-            if (staticRun >= limit)
+            // 930 - the clock moved but did the WORLD? A villager count that never changes on either side
+            // is the Worker's definition of a replay that is not advancing, so decide before the upload.
+            var staticRun = DeepStall.TrailingUnchangedCounts(DumpEvidence.DeepLines(_log.TextSoFar));
+            if (staticRun >= StaticSamples)
             {
-                if (!rethawed)
-                {
-                    rethawed = true;
-                    _staticDetail = await RethawAsync(staticRun, best, ct);
-                    continue;
-                }
                 _staticRun = staticRun;
                 _staticAtClock = best;
-                _diag?.Warn($"The world stopped changing at {best}s ({staticRun} identical samples) and a rethaw did not restart it; stopping the watch.");
+                _staticDetail = await ProbeAsync(ct);
+                _diag?.Warn($"The villager count has not changed for {staticRun} samples (to {best}s); stopping the watch.");
                 return false;
             }
 
@@ -447,27 +438,21 @@ public sealed class DeepSession
     }
 
     /// <summary>
-    /// 930 - the world has stopped changing: ask the game its rate and clock, then thaw again. Both
-    /// answers go to the session log, which is where the root cause of the 30 Sept stalls will be read.
-    /// Returns the probe's words for the failure detail.
+    /// 930 - the replay is not advancing: ask the game its rate and clock for the log, so the failure
+    /// carries what the game said. Changes nothing.
     /// </summary>
-    private async Task<string> RethawAsync(int staticRun, int atClock, CancellationToken ct)
+    private async Task<string> ProbeAsync(CancellationToken ct)
     {
-        var detail = "no probe answer";
         try
         {
-            _diag?.Warn($"{staticRun} samples in a row are identical at {atClock}s; probing the sim rate and thawing again.");
             var probe = await _driver.SendAsync(DeepLadder.Probe, DeepLadder.ProbeMarker, TimeSpan.FromSeconds(4), _log.Refresh(), tries: 1, ct);
-            if (probe.Line is { } p) { detail = p; _diag?.Info($"Probe: {p}"); }
-            var thaw = await _driver.SendAsync(DeepLadder.Thaw, DeepLadder.ThawMarker, TimeSpan.FromSeconds(4), _log.Refresh(), tries: 1, ct);
-            if (thaw.Line is { } t) { detail += " / " + t; _diag?.Info($"Rethaw: {t}"); }
+            if (probe.Line is { } p) { _diag?.Info($"Probe: {p}"); return p; }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            detail = $"probe failed: {ex.Message}";
-            _diag?.Warn(detail);
+            _diag?.Warn($"The probe could not be sent: {ex.Message}");
         }
-        return detail;
+        return "no probe answer";
     }
 
     private bool GameHasGoneAway(DateTime started) =>
@@ -547,29 +532,34 @@ public sealed record DeepClocks(int Count, int First, int Last)
 
 
 /// <summary>
-/// 930 - IS THE WORLD STILL CHANGING? Compares each sample's villager rows with the one before, ignoring
-/// the sample clock (the first field), which advances even when nothing else does.
+/// 930 - IS THE REPLAY ADVANCING? The Worker refuses a capture whose villager count is the same on every
+/// side for 90 seconds, so the launcher reads the same signal from the rows it already has.
 /// </summary>
 public static class DeepStall
 {
-    /// <summary>How many of the newest samples, counting back, carry exactly the same villager rows. 0 when fewer than two samples have rows.</summary>
-    public static int TrailingStaticSamples(IEnumerable<string> rows)
+    /// <summary>
+    /// How many of the newest samples, counting back, show exactly the same number of villager rows on
+    /// each side. 0 when fewer than two samples have rows. Carry, position and orders are ignored on
+    /// purpose: a stalled replay still lets its first villagers gather.
+    /// </summary>
+    public static int TrailingUnchangedCounts(IEnumerable<string> rows)
     {
-        var bySample = new List<(int Clock, System.Text.StringBuilder Body)>();
+        var samples = new List<(int Clock, SortedDictionary<string, int> PerSide)>();
         foreach (var row in rows)
         {
             var at = row.IndexOf(DeepLadder.SampleMarker + "|", StringComparison.Ordinal);
             if (at < 0) continue;
-            var start = at + DeepLadder.SampleMarker.Length + 1;
-            var bar = row.IndexOf('|', start);
-            if (bar < 0 || !int.TryParse(row[start..bar], out var clock)) continue;
-            if (bySample.Count == 0 || bySample[^1].Clock != clock) bySample.Add((clock, new System.Text.StringBuilder()));
-            bySample[^1].Body.Append(row[(bar + 1)..]).Append('\n');
+            var parts = row[(at + DeepLadder.SampleMarker.Length + 1)..].Split('|', 3);
+            if (parts.Length < 3 || !int.TryParse(parts[0], out var clock)) continue;
+            if (samples.Count == 0 || samples[^1].Clock != clock) samples.Add((clock, new SortedDictionary<string, int>()));
+            var side = parts[1];
+            samples[^1].PerSide[side] = samples[^1].PerSide.GetValueOrDefault(side) + 1;
         }
-        if (bySample.Count < 2) return 0;
-        var last = bySample[^1].Body.ToString();
+        if (samples.Count < 2) return 0;
+        static string Sig(SortedDictionary<string, int> d) => string.Join(",", d.Select(kv => kv.Key + ":" + kv.Value));
+        var last = Sig(samples[^1].PerSide);
         var run = 1;
-        for (var i = bySample.Count - 2; i >= 0 && bySample[i].Body.ToString() == last; i--) run++;
+        for (var i = samples.Count - 2; i >= 0 && Sig(samples[i].PerSide) == last; i--) run++;
         return run >= 2 ? run : 0;
     }
 }

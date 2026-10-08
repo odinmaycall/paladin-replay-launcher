@@ -4,27 +4,35 @@ using static Paladin.Tests.TestHarness;
 namespace Paladin.Tests;
 
 /// <summary>
-/// 930 - A CAPTURE WHOSE CLOCK ADVANCES WHILE THE WORLD DOES NOT.
+/// 930 - A REPLAY THAT PLAYS BUT DOES NOT ADVANCE.
 ///
-/// Measured on the 30 Sept 2026 queue night: four captures ran 915-965s of samples with every villager
-/// row identical to the one before (positions, carry, orders), then were refused at the Worker with
-/// HTTP 400 "stalled". Each cost a complete capture to discover. The launcher now notices after twelve
-/// samples. These fixtures are the real row shape, with the console's clock prefix left on.
+/// Measured on 30 Sept and 8 Oct 2026: seven captures ran the whole window and were refused at the
+/// Worker as "stalled" (the same villager count on every side for 90s). The same games stalled again on
+/// a second night, so it is the replay, not luck. On 8 Oct the game reported sim rate 64 and a clock
+/// running at 8x, and the villagers carried wood from sample to sample, so comparing whole rows missed
+/// the very case it was written for. The signal is the Worker's: the villager count per side.
 /// </summary>
 public static class DeepStallTests
 {
     private static string Prefix(int n) => $"22:36:{52 + n / 10:00}.{n % 10:000}   ";
 
-    private static IEnumerable<string> Sample(int clock, string x = "63", string carry = "0.0") => new[]
+    /// <summary>One sample: <paramref name="mine"/> and <paramref name="theirs"/> villagers, each carrying <paramref name="carry"/>.</summary>
+    private static IEnumerable<string> Sample(int clock, int mine, int theirs, string carry = "0.0")
     {
-        Prefix(clock) + $"PALADIN6_VA|{clock}|1|50060|-|{carry}|0.0|0.0|0.0|true|false|-|false|{x}|129|unit_villager_1_mon",
-        Prefix(clock) + $"PALADIN6_VA|{clock}|2|50072|-|{carry}|0.0|0.0|0.0|true|false|-|false|-70|-127|unit_villager_1_hre",
-    };
+        for (var i = 0; i < mine; i++)
+            yield return Prefix(clock) + $"PALADIN6_VA|{clock}|1|{50060 + i}|wood|{carry}|0.0|0.0|0.0|false|false|-|false|63|129|unit_villager_1_mon";
+        for (var i = 0; i < theirs; i++)
+            yield return Prefix(clock) + $"PALADIN6_VA|{clock}|2|{50080 + i}|-|{carry}|0.0|0.0|0.0|true|false|-|false|-70|-127|unit_villager_1_hre";
+    }
 
-    private static List<string> Run(int samples, Func<int, string> x)
+    private static List<string> Run(int samples, Func<int, (int Mine, int Theirs)> counts, Func<int, string>? carry = null)
     {
         var rows = new List<string>();
-        for (var i = 0; i < samples; i++) rows.AddRange(Sample(6 + i * 5, x(i)));
+        for (var i = 0; i < samples; i++)
+        {
+            var (m, t) = counts(i);
+            rows.AddRange(Sample(6 + i * 5, m, t, carry?.Invoke(i) ?? "0.0"));
+        }
         return rows;
     }
 
@@ -32,47 +40,50 @@ public static class DeepStallTests
     {
         Suite("Deep stall detection");
 
-        Test("a world that never changes is counted sample by sample, ignoring the advancing clock", () =>
+        Test("a villager count that never changes is counted sample by sample, whatever the clock does", () =>
         {
-            Equal(12, DeepStall.TrailingStaticSamples(Run(12, _ => "63")), "twelve identical samples, twelve different clocks");
-            Equal(30, DeepStall.TrailingStaticSamples(Run(30, _ => "63")));
+            Equal(16, DeepStall.TrailingUnchangedCounts(Run(16, _ => (6, 6))));
+            Equal(40, DeepStall.TrailingUnchangedCounts(Run(40, _ => (6, 6))));
         });
 
-        Test("a world that moves is never called stopped", () =>
+        Test("THE 8 OCT CASE: villagers keep gathering, the rows keep changing, nobody trains one", () =>
         {
-            Equal(0, DeepStall.TrailingStaticSamples(Run(40, i => (60 + i).ToString())), "every sample differs");
+            var rows = Run(30, _ => (6, 6), i => (i % 4 * 2.0).ToString("0.0"));
+            Equal(30, DeepStall.TrailingUnchangedCounts(rows), "carry changes every sample and the count does not");
         });
 
-        Test("only the TRAILING run counts, so a world that froze late is still caught", () =>
+        Test("a side that trains even one villager is advancing", () =>
         {
-            var rows = Run(20, i => i < 10 ? (60 + i).ToString() : "70");
-            Equal(10, DeepStall.TrailingStaticSamples(rows), "samples 10 to 19 are ten identical ones after the last change");
+            Equal(0, DeepStall.TrailingUnchangedCounts(Run(30, i => (6 + i / 3, 6))), "my side grows every third sample");
         });
 
-        Test("a world that froze and then recovered is not stopped any more", () =>
+        Test("only the trailing run counts, so a replay that stalled late is still caught", () =>
         {
-            var rows = Run(20, i => i < 15 ? "63" : (80 + i).ToString());
-            Equal(0, DeepStall.TrailingStaticSamples(rows), "the newest sample differs from the one before");
+            var rows = Run(30, i => (i < 10 ? 6 + i : 16, 6));
+            Equal(21, DeepStall.TrailingUnchangedCounts(rows), "the count last changes at sample 9, then holds for twenty-one samples");
         });
 
-        Test("a changing carry alone is movement", () =>
+        Test("a replay that stalled and then recovered is not stalled any more", () =>
         {
-            var rows = new List<string>();
-            for (var i = 0; i < 12; i++) rows.AddRange(Sample(6 + i * 5, "63", (i % 3).ToString("0.0")));
-            Equal(0, DeepStall.TrailingStaticSamples(rows));
+            Equal(0, DeepStall.TrailingUnchangedCounts(Run(30, i => (i < 25 ? 6 : 6 + i, 6))));
+        });
+
+        Test("a villager dying counts as movement on that side", () =>
+        {
+            Equal(0, DeepStall.TrailingUnchangedCounts(Run(20, i => (20, i == 19 ? 19 : 20))));
         });
 
         Test("nothing to compare is not a stall", () =>
         {
-            Equal(0, DeepStall.TrailingStaticSamples(Array.Empty<string>()));
-            Equal(0, DeepStall.TrailingStaticSamples(Sample(6)), "one sample cannot be compared with anything");
-            Equal(0, DeepStall.TrailingStaticSamples(new[] { "22:36:52.106   PALADIN3_SQ_BEGIN|sampler5" }), "framing lines carry no rows");
+            Equal(0, DeepStall.TrailingUnchangedCounts(Array.Empty<string>()));
+            Equal(0, DeepStall.TrailingUnchangedCounts(Sample(6, 6, 6)), "one sample cannot be compared with anything");
+            Equal(0, DeepStall.TrailingUnchangedCounts(new[] { "22:36:52.106   PALADIN3_SQ_BEGIN|sampler5" }), "framing lines carry no rows");
         });
 
-        Test("the limit is a minute of game time, far inside the Worker's ninety seconds", () =>
+        Test("the limit sits inside the Worker's ninety seconds, so the launcher decides first", () =>
         {
-            Equal(12, DeepSession.StaticSamples);
-            True(DeepSession.StaticSamples * DeepLadder.Cadence <= 90, "the launcher decides before the Worker would");
+            Equal(16, DeepSession.StaticSamples);
+            True(DeepSession.StaticSamples * DeepLadder.Cadence < 90, "80s against the Worker's 90s");
         });
 
         Test("the probe asks for the rate and the clock and changes neither", () =>
@@ -84,7 +95,7 @@ public static class DeepStallTests
 
         Test("the failure says what happened and that nothing was sent", () =>
         {
-            var f = DeepFailures.Stalled(14, 301, "PALADIN9_PROBE|0.0|301");
+            var f = DeepFailures.Stalled(16, 301, "PALADIN9_PROBE|64.0|301");
             Equal("D4", f.Code);
             True(f.Text.Contains("5:01") && f.Text.Contains("Nothing was sent"), f.Text);
         });

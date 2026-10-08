@@ -5,12 +5,11 @@ afterwards.
 
 ## New in 0.5.12
 
-- **A capture whose replay has stopped now ends in about a minute, not fifteen.** Some captures kept
-  reading a replay whose clock ran on while nothing in the game moved, and were only refused after the
-  full capture. The launcher now notices when a minute of game time passes with every villager unchanged,
-  asks the game what speed it is running at, tries to restart it once, and if that does not help stops
-  with a clear message (D4) and sends nothing. The speed it reports is written to the session log, so a
-  cause can be read from it afterwards.
+- **A capture whose replay is not advancing now ends in about 80 seconds, not fifteen minutes.** Some
+  replays play but never carry out the players' orders, so no villager is ever trained; capturing one
+  used to run the whole window and be refused at the end. The launcher now watches the villager count on
+  each side and, if it does not change for 80 seconds of game time, asks the game its speed (written to
+  the session log), stops with a clear message (D4) and sends nothing.
 
 ## New in 0.5.11
 
