@@ -209,7 +209,42 @@ public sealed class DeepRunner
          * simply reports `partial` and can be completed later without replaying anything. So this
          * neither changes the exit code nor stops the reader being taken to their build order.
          */
-        if (Result is { Ok: true } && !DryRun && request.Upload && uploader is not null
+        // A MIRROR MATCHUP IS SETTLED BY THE REPLAY, so the replay goes first. Paladin tells the two
+        // players of a mirror apart by where each started, which it reads from the replay; a game it has
+        // not read yet answers `ambiguous_sides`. The bytes are held already, so keep them, then send the
+        // same capture again. Anything short of a clean second answer leaves the first failure standing.
+        var replayKept = false;
+        if (Result is { Ok: false, Rows: { Count: > 0 } mirrorRows } && !DryRun && request.Upload && uploader is not null
+            && MirrorRetry.WantsReplayFirst(Result.Upload) && hold is { Ok: true })
+        {
+            var mirrorReplays = new ReplayUploader(_config.DumpUploadBaseUrl, _version, _log);
+            _ui.Note(DeepConsoleText.MirrorNeedsReplay());
+            var mirrorKept = await mirrorReplays.UploadAsync(request.GameId, hold, ct);
+            if (mirrorKept.Ok)
+            {
+                replayKept = true;
+                _ui.Ok(DeepConsoleText.ReplayRetained(mirrorKept.WireBytes, mirrorKept.RawBytes, mirrorKept.Parsed));
+                var again = await uploader.UploadAsync(DeepEnvelope.From(request.GameId, mirrorRows), ct);
+                if (again.Accepted)
+                {
+                    _ui.Ok(DeepConsoleText.Accepted(Result.Samples));
+                    _ui.Note(DeepConsoleText.ReloadThePage);
+                    Result = Result with { Failure = null, Upload = again };
+                    exit = ExitCodes.Ok;
+                }
+                else
+                {
+                    _log.Warn($"The capture was sent again after the replay and was still refused: {again.Code ?? again.Outcome.ToString()}");
+                    _ui.Warn(DeepConsoleText.MirrorStillRefused(again.PlainWords));
+                }
+            }
+            else
+            {
+                _ui.Warn(DeepConsoleText.ReplayNotRetained(mirrorKept.Error));
+            }
+        }
+
+        if (Result is { Ok: true } && !DryRun && request.Upload && uploader is not null && !replayKept
             && (hold is not null || runner.PreparedReplayPath is not null))
         {
             var replays = new ReplayUploader(_config.DumpUploadBaseUrl, _version, _log);

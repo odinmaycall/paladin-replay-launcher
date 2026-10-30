@@ -88,6 +88,12 @@ public static class DeepConsoleText
     /// §879 — the replay going up after the capture. Said in the reader's terms: what it is for, not
     /// what it is. "Keeping the replay" is true and useful; "POSTing a gzipped .rec" is neither.
     /// </summary>
+    public static string MirrorNeedsReplay() =>
+        "Both players are the same civilisation, so Paladin needs this game's replay to tell them apart. Keeping it first, then sending the capture again…";
+
+    public static string MirrorStillRefused(string why) =>
+        $"The replay is kept, but Paladin still could not tell the two players apart ({why}). The capture is saved on this PC.";
+
     public static string RetainingReplay() => "Keeping this game's replay with Paladin, so the build order stays readable after Microsoft drops it…";
 
     public static string ReplayRetained(int wireBytes, int rawBytes, bool parsed) =>

@@ -16,6 +16,17 @@ public static class DeepCommandTests
 {
     public static void Register()
     {
+        Suite("Mirror retry");
+
+        Test("only the Worker's ambiguous_sides refusal asks for the replay first", () =>
+        {
+            var ambiguous = DumpUploader.Classify(400, "Bad Request", "{\"error\":\"ambiguous_sides\",\"detail\":\"x\"}");
+            True(MirrorRetry.WantsReplayFirst(ambiguous), "a mirror the Worker could not settle is retried after the replay");
+            False(MirrorRetry.WantsReplayFirst(DumpUploader.Classify(400, "Bad Request", "{\"error\":\"incomplete\",\"detail\":\"x\"}")), "another refusal is not");
+            False(MirrorRetry.WantsReplayFirst(DumpUploader.Classify(200, "OK", "{\"status\":\"stored\"}")), "an accepted capture is not");
+            False(MirrorRetry.WantsReplayFirst(null), "and no answer is not");
+        });
+
         Suite("Deep links");
 
         Test("a paladin://deep link parses into the game and the replay", () =>
