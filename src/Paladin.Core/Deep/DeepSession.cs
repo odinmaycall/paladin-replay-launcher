@@ -12,7 +12,8 @@ public sealed record DeepSessionOptions(
     DumpPacing Pacing,
     bool Upload = true,
     int RepairAttempts = 2,
-    int WindowSeconds = DeepLadder.WindowSeconds);
+    int WindowSeconds = DeepLadder.WindowSeconds,
+    int CadenceSeconds = DeepLadder.Cadence);
 
 /// <param name="Failure">Null when the capture did what it set out to do.</param>
 public sealed record DeepSessionResult(
@@ -274,8 +275,9 @@ public sealed class DeepSession
 
         // 2. The definitions. Each prints nothing, so there is no marker to wait for; the self-check
         //    below is what proves they landed.
-        _ui.Pending(DeepConsoleText.Installing(DeepLadder.Definitions.Count));
-        if (await SendDefinitionsAsync(DeepLadder.Definitions, ct) is { } defFailure) return defFailure;
+        var definitions = DeepLadder.DefinitionsFor(_options.CadenceSeconds);
+        _ui.Pending(DeepConsoleText.Installing(definitions.Count));
+        if (await SendDefinitionsAsync(definitions, ct) is { } defFailure) return defFailure;
 
         // 3. ASK, then repair only what was lost, then ask again. The check's answer is carried round
         //    the loop rather than re-queried, so a repair costs exactly one extra self-check.
@@ -305,7 +307,7 @@ public sealed class DeepSession
                     _diag?.Warn($"The capture could not set up {string.Join(", ", optional)}; the build order is unaffected.");
                 }
                 _store.SaveRecord(record);
-                _ui.Ok(DeepConsoleText.Running(DeepLadder.Cadence, DeepLadder.SimRate));
+                _ui.Ok(DeepConsoleText.Running(_options.CadenceSeconds, DeepLadder.SimRate));
                 return null;
             }
 
@@ -315,8 +317,8 @@ public sealed class DeepSession
 
             // Re-send only the lines that define what is missing. A name we cannot place — V5WHO
             // itself, or a helper defined alongside others — means re-sending all of them.
-            var toSend = DeepLadder.Definitions.Where(line => missing.Any(name => DefinesName(line, name))).ToList();
-            if (toSend.Count == 0) toSend = DeepLadder.Definitions.ToList();
+            var toSend = definitions.Where(line => missing.Any(name => DefinesName(line, name))).ToList();
+            if (toSend.Count == 0) toSend = definitions.ToList();
 
             _ui.Warn(DeepConsoleText.Repairing(missing, repair + 1, _options.RepairAttempts));
             _diag?.Warn($"The console dropped {string.Join(", ", missing)}; re-sending {toSend.Count} definition line(s)");

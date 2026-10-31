@@ -37,6 +37,8 @@ public sealed class CommandLineOptions
     public bool NoUpload { get; private set; }
     /// <summary>926 — --no-browser: do not open the build-order page after a capture (an unattended queue).</summary>
     public bool NoBrowser { get; private set; }
+    /// <summary>--cadence N: sample every N game seconds instead of the production 5 (a test capture; 1 to 15).</summary>
+    public int? Cadence { get; private set; }
     /// <summary>--squads: also type the squad ladder.</summary>
     public bool Squads { get; private set; }
     /// <summary>--force: dump even though Paladin already has a world layer for the game.</summary>
@@ -110,6 +112,12 @@ public sealed class CommandLineOptions
 
                 case "--no-upload":
                     options.NoUpload = true;
+                    break;
+
+                case "--cadence":
+                    // A test capture at another interval. Anything that is not a whole number of seconds in range
+                    // is left unset and the production 5 stands, so a typo cannot start a capture at a stray rate.
+                    options.Cadence = int.TryParse(Next(args, ref i), out var cadence) && cadence >= 1 && cadence <= 15 ? cadence : null;
                     break;
 
                 case "--no-browser":

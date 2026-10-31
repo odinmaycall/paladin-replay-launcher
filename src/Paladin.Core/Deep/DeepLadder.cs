@@ -104,6 +104,25 @@ public static class DeepLadder
     /// </summary>
     public static IReadOnlyList<string> Definitions => _definitions.Value;
 
+    /// <summary>The shortest and longest interval a test capture may ask for, in game seconds.</summary>
+    public const int MinCadence = 1;
+    public const int MaxCadence = 15;
+
+    /// <summary>
+    /// The sampler with its interval set to <paramref name="cadence"/> game seconds. The interval lives in
+    /// one place, REG5's two Rule_AddInterval calls, so this replaces exactly that and nothing else; every
+    /// helper name the self-check looks for is untouched. The production cadence returns the lines as shipped.
+    /// </summary>
+    public static IReadOnlyList<string> DefinitionsFor(int cadence)
+    {
+        if (cadence < MinCadence || cadence > MaxCadence)
+            throw new ArgumentOutOfRangeException(nameof(cadence), cadence, $"the sampler interval must be {MinCadence} to {MaxCadence} seconds");
+        if (cadence == Cadence) return Definitions;
+        var from = $"SAMPLE5,{Cadence})";
+        var to = $"SAMPLE5,{cadence})";
+        return Definitions.Select(l => l.Replace(from, to, StringComparison.Ordinal)).ToList();
+    }
+
     /// <summary>
     /// Stop game time dead, and say so with the rate and the clock. First, so the definition lines that
     /// follow cost no game time at all.

@@ -40,7 +40,8 @@ public sealed record DumpRequest(
     bool Force = false,
     bool AssumeYes = false,
     bool ThenWatch = false,
-    bool NoBrowser = false)
+    bool NoBrowser = false,
+    int CadenceSeconds = 5)
 {
     /// <summary>The name the replay must be placed under for the game to accept it, and for RUN-OPTIONS to name this game.</summary>
     public string ExpectedReplayName => $"AgeIV_Replay_{GameId}";
