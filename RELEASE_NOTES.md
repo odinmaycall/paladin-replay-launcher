@@ -1,7 +1,13 @@
-# Paladin Replay Launcher 0.5.13
+# Paladin Replay Launcher 0.5.14
 
 Opens an Age of Empires IV replay and puts your game settings back exactly as they were
 afterwards.
+
+## New in 0.5.14
+
+- **Paladin can now tell this launcher samples every second.** A game captured at the older, coarser detail
+  (every 5 or 15 seconds) is offered a "Recapture at 1 s" link on its page, and only a launcher that says it
+  samples every second is offered it. Nothing about how a capture runs has changed.
 
 ## New in 0.5.13
 

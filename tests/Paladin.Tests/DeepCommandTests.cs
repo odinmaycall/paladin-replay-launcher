@@ -141,12 +141,12 @@ public static class DeepCommandTests
             // THIS EXACT STRING IS THE CROSS-REPO CONTRACT. The site pins the same one in
             // src/lib/launcherCapability.test.ts, so a rename or a reordering here fails a test in a
             // repo this build never sees, which is the only way two halves in two repos stay honest.
-            Equal("https://paladin.odinmaycall.com/?launcher=0.5.0&caps=deepCapture%2CdeepRetry%2CreplayRetention", url);
+            Equal("https://paladin.odinmaycall.com/?launcher=0.5.0&caps=deepCapture%2CdeepRetry%2CreplayRetention%2CeverySecond", url);
         });
 
         Test("IT ANNOUNCES TO THE CONFIGURED DEPLOY, so a test run never tells production it is here", () =>
         {
-            Equal("http://localhost:8787/?launcher=0.5.0&caps=deepCapture%2CdeepRetry%2CreplayRetention", LauncherCallback.UrlFor("http://localhost:8787/api/world/", "0.5.0")!);
+            Equal("http://localhost:8787/?launcher=0.5.0&caps=deepCapture%2CdeepRetry%2CreplayRetention%2CeverySecond", LauncherCallback.UrlFor("http://localhost:8787/api/world/", "0.5.0")!);
         });
 
         Test("890 - THIS BUILD CLAIMS RETENTION SEPARATELY, because 0.5.3 claimed it by implication", () =>
@@ -158,6 +158,7 @@ public static class DeepCommandTests
             True(LauncherCallback.Capabilities.Contains(LauncherCallback.DeepCapture), "deepCapture is announced");
             True(LauncherCallback.Capabilities.Contains(LauncherCallback.DeepRetry), "deepRetry still is");
             True(LauncherCallback.Capabilities.Contains(LauncherCallback.ReplayRetention), "and retention says so itself");
+            True(LauncherCallback.Capabilities.Contains(LauncherCallback.EverySecond), "and so does sampling every second");
 
             // A build that could not keep a replay would announce the first two and NOT the third, and
             // the site would show the update message. Proving the shape of that announcement here

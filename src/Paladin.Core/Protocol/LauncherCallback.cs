@@ -68,11 +68,19 @@ public static class LauncherCallback
     public const string ReplayRetention = "replayRetention";
 
     /// <summary>
+    /// 0.5.14 - this build samples the game every second. Named so the site can offer a recapture of an older,
+    /// coarser capture only to a launcher that will actually take it finer: 0.5.13 and earlier announce
+    /// the three names above and not this one, so the site tells them to update instead of inviting a
+    /// capture that would land at the same detail it was meant to replace.
+    /// </summary>
+    public const string EverySecond = "everySecond";
+
+    /// <summary>
     /// What this build can do, by name. Named rather than versioned so the site never encodes version
     /// numbers, and ORDERED, because the site's contract test pins this exact string: a reordering
     /// would read as a contract change when nothing had actually changed.
     /// </summary>
-    public static IReadOnlyList<string> Capabilities { get; } = new[] { DeepCapture, DeepRetry, ReplayRetention };
+    public static IReadOnlyList<string> Capabilities { get; } = new[] { DeepCapture, DeepRetry, ReplayRetention, EverySecond };
 
     /// <summary>
     /// The URL to open, or null when there is nothing sensible to announce.
