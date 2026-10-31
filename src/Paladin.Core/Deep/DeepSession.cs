@@ -80,6 +80,18 @@ public sealed class DeepSession
     /// </summary>
     public const int StaticSamples = 16;
 
+    /// <summary>
+    /// The same rule in GAME SECONDS, which is what it always meant: 16 samples at the production 5 s is 80 s.
+    /// A fixed sample count is wrong at any other interval. At 1 s, 16 samples is 16 s, and two real
+    /// builds sat on the same villager count for about 20 s around 8:40 of a test capture, so a healthy replay
+    /// (sim rate 64, clock still advancing) was ended as stalled. The Worker's own rule is already in seconds.
+    /// </summary>
+    public const int StaticSeconds = 80;
+
+    /// <summary>How many identical samples mean "stalled" at this interval; never fewer than the production 16.</summary>
+    public static int StaticSamplesFor(int cadenceSeconds) =>
+        Math.Max(StaticSamples, (int)Math.Ceiling(StaticSeconds / (double)Math.Max(1, cadenceSeconds)));
+
     private int _staticRun;
     private int _staticAtClock;
     private string _staticDetail = "";
@@ -416,7 +428,7 @@ public sealed class DeepSession
             // 930 - the clock moved but did the WORLD? A villager count that never changes on either side
             // is the Worker's definition of a replay that is not advancing, so decide before the upload.
             var staticRun = DeepStall.TrailingUnchangedCounts(DumpEvidence.DeepLines(_log.TextSoFar));
-            if (staticRun >= StaticSamples)
+            if (staticRun >= StaticSamplesFor(_options.CadenceSeconds))
             {
                 _staticRun = staticRun;
                 _staticAtClock = best;

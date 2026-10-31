@@ -38,6 +38,17 @@ public static class DeepStallTests
 
     public static void Register()
     {
+        Suite("Deep stall detection by game seconds");
+
+        Test("the stall limit is 80 game seconds whatever the sampling interval", () =>
+        {
+            Equal(16, DeepSession.StaticSamplesFor(5), "the production interval is exactly what it always was");
+            Equal(27, DeepSession.StaticSamplesFor(3), "80 s at 3 s");
+            Equal(80, DeepSession.StaticSamplesFor(1), "80 s at 1 s, where a fixed 16 ended a healthy replay at 8:45");
+            Equal(16, DeepSession.StaticSamplesFor(15), "a slower interval never goes below the production count");
+            True(DeepSession.StaticSamplesFor(1) * 1 < 90, "still inside the Worker's 90 s, so the launcher decides first");
+        });
+
         Suite("Deep stall detection");
 
         Test("a villager count that never changes is counted sample by sample, whatever the clock does", () =>
