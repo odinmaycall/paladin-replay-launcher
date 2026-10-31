@@ -94,7 +94,7 @@ public static class DeepStallTests
         Test("the limit sits inside the Worker's ninety seconds, so the launcher decides first", () =>
         {
             Equal(16, DeepSession.StaticSamples);
-            True(DeepSession.StaticSamples * DeepLadder.Cadence < 90, "80s against the Worker's 90s");
+            True(DeepSession.StaticSamplesFor(DeepLadder.Cadence) * DeepLadder.Cadence < 90, "80s against the Worker's 90s, at the production interval");
         });
 
         Test("the probe asks for the rate and the clock and changes neither", () =>

@@ -471,8 +471,7 @@ internal static class Program
             Force: options.Force || linkForce,
             AssumeYes: options.AssumeYes,
             ThenWatch: thenWatch || options.ThenWatch,
-            NoBrowser: options.NoBrowser,
-            CadenceSeconds: options.Cadence ?? 5);
+            NoBrowser: options.NoBrowser);
     }
 
     /// <summary>playback\AgeIV_Replay_&lt;id&gt;, the file the owner's queue already downloaded.</summary>

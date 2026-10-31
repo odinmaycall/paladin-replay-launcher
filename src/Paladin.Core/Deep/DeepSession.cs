@@ -12,8 +12,7 @@ public sealed record DeepSessionOptions(
     DumpPacing Pacing,
     bool Upload = true,
     int RepairAttempts = 2,
-    int WindowSeconds = DeepLadder.WindowSeconds,
-    int CadenceSeconds = DeepLadder.Cadence);
+    int WindowSeconds = DeepLadder.WindowSeconds);
 
 /// <param name="Failure">Null when the capture did what it set out to do.</param>
 public sealed record DeepSessionResult(
@@ -287,7 +286,7 @@ public sealed class DeepSession
 
         // 2. The definitions. Each prints nothing, so there is no marker to wait for; the self-check
         //    below is what proves they landed.
-        var definitions = DeepLadder.DefinitionsFor(_options.CadenceSeconds);
+        var definitions = DeepLadder.Definitions;
         _ui.Pending(DeepConsoleText.Installing(definitions.Count));
         if (await SendDefinitionsAsync(definitions, ct) is { } defFailure) return defFailure;
 
@@ -319,7 +318,7 @@ public sealed class DeepSession
                     _diag?.Warn($"The capture could not set up {string.Join(", ", optional)}; the build order is unaffected.");
                 }
                 _store.SaveRecord(record);
-                _ui.Ok(DeepConsoleText.Running(_options.CadenceSeconds, DeepLadder.SimRate));
+                _ui.Ok(DeepConsoleText.Running(DeepLadder.Cadence, DeepLadder.SimRate));
                 return null;
             }
 
@@ -428,7 +427,7 @@ public sealed class DeepSession
             // 930 - the clock moved but did the WORLD? A villager count that never changes on either side
             // is the Worker's definition of a replay that is not advancing, so decide before the upload.
             var staticRun = DeepStall.TrailingUnchangedCounts(DumpEvidence.DeepLines(_log.TextSoFar));
-            if (staticRun >= StaticSamplesFor(_options.CadenceSeconds))
+            if (staticRun >= StaticSamplesFor(DeepLadder.Cadence))
             {
                 _staticRun = staticRun;
                 _staticAtClock = best;

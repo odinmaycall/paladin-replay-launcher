@@ -1,7 +1,20 @@
-# Paladin Replay Launcher 0.5.12
+# Paladin Replay Launcher 0.5.13
 
 Opens an Age of Empires IV replay and puts your game settings back exactly as they were
 afterwards.
+
+## New in 0.5.13
+
+- **A capture now reads the game every second, not every five.** The villager split on each row of a build
+  order is read from the game at most a second before that row's clock, instead of up to five. Measured on
+  one game at 5, 3 and 1 second, the capture takes the same time (about three minutes) at all three, so
+  there is nothing extra to wait for. Captures already made at 5 seconds are unchanged.
+- **Two builds of the same civilisation are told apart.** A mirror matchup (two Scots, two French) used to
+  be refused because the two sides' villagers carry the same name. The launcher now keeps the game's replay
+  first, and Paladin tells the players apart by where each one started.
+- **A quiet stretch of a game no longer ends a healthy capture as stalled.** The check for a replay that is
+  not advancing counted samples, which meant a shorter time at a faster rate. It now counts 80 seconds of
+  game time whatever the interval.
 
 ## New in 0.5.12
 

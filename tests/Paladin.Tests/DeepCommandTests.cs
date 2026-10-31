@@ -29,25 +29,12 @@ public static class DeepCommandTests
 
         Suite("Deep cadence");
 
-        Test("the sampler's interval is the only thing a different cadence changes", () =>
+        Test("the sampler registers every second and nothing in it still says five", () =>
         {
-            var normal = DeepLadder.Definitions;
-            var three = DeepLadder.DefinitionsFor(3);
-            Equal(normal.Count, three.Count);
-            True(normal.Any(l => l.Contains("SAMPLE5,5)")), "the shipped sampler registers every 5 s");
-            True(three.Any(l => l.Contains("SAMPLE5,3)")), "and the 3 s copy registers every 3 s");
-            False(three.Any(l => l.Contains("SAMPLE5,5)")), "with no 5 s registration left behind");
-            // every other line is byte for byte what ships, so the self-check's helper names cannot drift
-            Equal(0, normal.Zip(three).Count(p => p.First != p.Second && !p.First.Contains("SAMPLE5,5)")));
-            True(ReferenceEquals(normal, DeepLadder.DefinitionsFor(DeepLadder.Cadence)), "the production cadence is the shipped list itself");
-        });
-
-        Test("a cadence outside 1 to 15 is refused rather than sent to the game", () =>
-        {
-            Throws<ArgumentOutOfRangeException>(() => DeepLadder.DefinitionsFor(0));
-            Throws<ArgumentOutOfRangeException>(() => DeepLadder.DefinitionsFor(16));
-            var lines = DeepLadder.DefinitionsFor(1);
-            True(lines.Any(l => l.Contains("SAMPLE5,1)")), "one second is allowed");
+            Equal(1, DeepLadder.Cadence);
+            True(DeepLadder.Definitions.Any(l => l.Contains("SAMPLE5,1)")), "REG5 registers the interval at 1 s");
+            False(DeepLadder.Definitions.Any(l => l.Contains("SAMPLE5,5)")), "with no 5 s registration left behind");
+            Equal(26, DeepLadder.Definitions.Count, "and it is the same twenty-six definitions, no line added or lost");
         });
 
         Suite("Deep links");

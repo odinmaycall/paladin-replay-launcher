@@ -87,8 +87,13 @@ public static class DeepLadder
             .ToList();
     }
 
-    /// <summary>The production cadence, in game seconds between samples.</summary>
-    public const int Cadence = 5;
+    /// <summary>
+    /// The cadence, in game seconds between samples, and the only one: the sampler text itself registers
+    /// every second (REG5's two Rule_AddInterval calls). Measured on one game at 5, 3 and 1 s, the capture takes
+    /// the same real time (about 190 s) at all three because playback at 8x is the slow part, every gap was exactly
+    /// the interval, and accuracy is what a reader of a build order wants. There is no slower option to choose.
+    /// </summary>
+    public const int Cadence = 1;
 
     /// <summary>The production playback rate. SimRate is ticks per second and 8 is 1x, so 64 is 8x.</summary>
     public const int SimRate = 64;
@@ -103,25 +108,6 @@ public static class DeepLadder
     /// helpers (SO, V5G, V5K2, V5H, V5A, V5B, V5OK, V5CNT, V5END, SAMPLE5, V5W1..V5W3, V9T, SQ2, SQ).
     /// </summary>
     public static IReadOnlyList<string> Definitions => _definitions.Value;
-
-    /// <summary>The shortest and longest interval a test capture may ask for, in game seconds.</summary>
-    public const int MinCadence = 1;
-    public const int MaxCadence = 15;
-
-    /// <summary>
-    /// The sampler with its interval set to <paramref name="cadence"/> game seconds. The interval lives in
-    /// one place, REG5's two Rule_AddInterval calls, so this replaces exactly that and nothing else; every
-    /// helper name the self-check looks for is untouched. The production cadence returns the lines as shipped.
-    /// </summary>
-    public static IReadOnlyList<string> DefinitionsFor(int cadence)
-    {
-        if (cadence < MinCadence || cadence > MaxCadence)
-            throw new ArgumentOutOfRangeException(nameof(cadence), cadence, $"the sampler interval must be {MinCadence} to {MaxCadence} seconds");
-        if (cadence == Cadence) return Definitions;
-        var from = $"SAMPLE5,{Cadence})";
-        var to = $"SAMPLE5,{cadence})";
-        return Definitions.Select(l => l.Replace(from, to, StringComparison.Ordinal)).ToList();
-    }
 
     /// <summary>
     /// Stop game time dead, and say so with the rate and the clock. First, so the definition lines that

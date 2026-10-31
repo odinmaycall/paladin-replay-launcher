@@ -154,11 +154,11 @@ public static class DeepLadderTests
 
         Test("THE CADENCE AND THE RATE ARE THE PRODUCTION ONES, carried in the sampler itself", () =>
         {
-            Equal(5, DeepLadder.Cadence);
+            Equal(1, DeepLadder.Cadence);
             Equal(64, DeepLadder.SimRate);
             Equal(900, DeepLadder.WindowSeconds);
-            True(DeepLadder.Definitions.Any(l => l.Contains(",SAMPLE5,5", StringComparison.Ordinal)),
-                "the interval literal inside REG5 must be the 5s cadence, not the kit's 15");
+            True(DeepLadder.Definitions.Any(l => l.Contains(",SAMPLE5,1)", StringComparison.Ordinal)),
+                "the interval literal inside REG5 is the 1 s cadence, not the kit's 15");
             True(DeepLadder.Definitions.Any(l => l.Contains("V9T(64)", StringComparison.Ordinal)),
                 "the thaw inside SQ2 must go to rate 64");
         });

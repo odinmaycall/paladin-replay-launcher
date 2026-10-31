@@ -163,7 +163,6 @@ public sealed class DeepRunner
                     {
                         // §876 — the window, or this match's own end when Paladin said it ended sooner.
                         WindowSeconds = windowSeconds,
-                        CadenceSeconds = request.CadenceSeconds,
                     },
                     keys, watcher, new ShieldDumpReporter(_ui),
                     new SessionDeepStore(context.SessionDirectory, _log),
